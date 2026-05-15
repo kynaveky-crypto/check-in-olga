@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>L'apartament d'Olga - Check-In</title>
+  <link rel="stylesheet" href="estilos.css">
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen p-4 flex flex-col items-center justify-center">
+  
+  <div class="max-w-3xl w-full mx-auto">
+    
+    <!-- BARRA SUPERIOR DE IDIOMA -->
+    <div class="bg-white rounded-xl shadow-md p-4 mb-4 flex justify-between items-center border-b-4 border-blue-500" id="languageSelectionContainer">
+        <span class="font-bold text-gray-700 flex items-center">
+            <span class="text-xl mr-2">🌍</span> <span id="lang_label">Idioma / Language</span>
+        </span>
+        <select id="languageSelect" class="border-2 border-blue-500 rounded-lg p-2 bg-gray-50 font-semibold cursor-pointer outline-none focus:ring-2 focus:ring-blue-300">
+            <option value="es">Español</option>
+            <option value="ca">Català</option>
+            <option value="en">English</option>
+            <option value="fr">Français</option>
+        </select>
+    </div>
+
+    <!-- CONTENEDOR PRINCIPAL -->
+    <div class="bg-white rounded-xl shadow-xl overflow-hidden border border-gray-200">
+        
+        <!-- PANTALLA DE BIENVENIDA -->
+        <div id="welcomeScreen" class="p-6">
+          <div id="welcomeContent">
+            <div class="text-center mb-6">
+              <h1 class="text-4xl font-bold text-white drop-shadow-md">L'Apartament de l'Olga</h1>
+              <p class="text-lg mt-2 font-semibold">Carrer Eucaliptus 13, Urb. Eucaliptus, Amposta 43870</p>
+              <p class="text-lg">Tel: 658522254</p>
+              <p class="text-lg">Email: ogmdelta@gmail.com</p>
+            </div>
+            <div class="bg-black bg-opacity-60 border-l-4 border-blue-400 text-white p-6 rounded-lg mb-6 shadow-lg" role="alert">
+              <p class="font-bold text-2xl mb-3 text-blue-300" id="welcome_title">Registro de Huéspedes</p>
+              <p id="welcome_text" class="text-lg leading-relaxed">Va a iniciar el proceso de registro obligatorio para su estancia en nuestro alojamiento. Por favor, tenga a mano los documentos de identidad de todos los viajeros.</p>
+            </div>
+            <div class="flex justify-center items-center mt-8">
+              <button onclick="showForm()" class="bg-green-600 hover:bg-green-700 text-white px-10 py-4 rounded-full font-bold text-xl shadow-xl transform transition hover:scale-105" id="btn_continue">Comenzar Check-in</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ZONA DEL FORMULARIO -->
+        <div id="checkinArea" class="hidden p-6 bg-white">
+            <form id="checkinForm" class="space-y-4">
+                <h2 class="text-2xl font-bold border-b-2 border-gray-200 pb-2 text-gray-800" id="title_adult_principal">Ficha del Huésped</h2>
+                
+                <div class="bg-blue-50 p-5 rounded-lg border border-blue-200 shadow-sm mb-6">
+                    <label class="block font-bold text-blue-900 mb-2" id="label_arrival">Fecha de Llegada al Alojamiento</label>
+                    <input type="date" name="FechaEntrada" required class="w-full border-2 border-blue-300 rounded p-3 focus:outline-none focus:border-blue-500" />
+                </div>
+
+                <div class="adult-form-container-principal space-y-4">
+                    <div><label class="block font-semibold" id="label_name">Nombre y Apellidos</label><input type="text" name="Nombre_1" required class="w-full border rounded p-2" /></div>
+                    <div><label class="block font-semibold" id="label_birth">Fecha de Nacimiento</label><input type="date" name="Nacimiento_1" required class="w-full border rounded p-2 birth-input-adult" /></div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div><label class="block font-semibold" id="label_doc_type">Tipo de Documento</label><select name="TipoDoc_1" class="w-full border rounded p-2" required><option value="DNI">DNI</option><option value="NIE">NIE</option><option value="Pasaporte">Pasaporte</option></select></div>
+                        <div><label class="block font-semibold" id="label_doc_number">Número de Documento</label><input type="text" name="NumDoc_1" required class="w-full border rounded p-2" /></div>
+                    </div>
+                    <div><label class="block font-semibold" id="label_support">Número de Soporte</label><input type="text" name="Soporte_1" required class="w-full border rounded p-2" /></div>
+                    <div><label class="block font-semibold" id="label_issue">Fecha de Expedición</label><input type="date" name="Expedicion_1" required class="w-full border rounded p-2" /></div>
+                    <div><label class="block font-semibold" id="label_address">Dirección habitual</label><input type="text" name="Direccion_1" required class="w-full border rounded p-2" /></div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div><label class="block font-semibold" id="label_city">Localidad</label><input type="text" name="Ciudad_1" required class="w-full border rounded p-2" /></div>
+                        <div><label class="block font-semibold" id="label_zip">Código Postal</label><input type="text" name="CodigoPostal_1" required class="w-full border rounded p-2" /></div>
+                    </div>
+                    <div><label class="block font-semibold" id="label_prov">Provincia</label><input type="text" name="Provincia_1" required class="w-full border rounded p-2" /></div>
+                    <div><label class="block font-semibold" id="label_country">País</label><input type="text" name="Pais_1" required class="w-full border rounded p-2" /></div>
+                    <div><label class="block font-semibold" id="label_phone">Teléfono</label><input type="tel" name="Telefono_1" required class="w-full border rounded p-2" /></div>
+                    <div><label class="block font-semibold" id="label_email">Email</label><input type="email" name="Email_1" required class="w-full border rounded p-2" /></div>
+                    <div><label class="block font-semibold" id="label_nationality">Nacionalidad</label><input type="text" name="Nacionalidad_1" required class="w-full border rounded p-2" /></div>
+                </div>
+
+                <div id="adultForms" class="space-y-6"></div>
+                <div id="minorForms" class="space-y-4"></div>
+
+                <div class="mt-6 border-t pt-6 flex flex-col md:flex-row items-center justify-start gap-4">
+                    <button type="button" onclick="addAdult()" class="w-full md:w-auto bg-purple-600 hover:bg-purple-700 text-white px-6 py-3 rounded-lg shadow-md transition font-semibold" id="btn_adult">➕ Añadir adulto</button>
+                    <button type="button" onclick="addMinor()" class="w-full md:w-auto bg-blue-500 hover:bg-blue-600 text-white px-6 py-3 rounded-lg shadow-md transition font-semibold" id="btn_minor">➕ Añadir menor</button>
+                </div>
+                <div class="flex items-center space-x-3 pt-6 bg-gray-50 p-4 rounded-lg mt-6">
+                    <input type="checkbox" required id="privacy" class="w-6 h-6 text-blue-600 rounded cursor-pointer" />
+                    <label for="privacy" class="text-gray-700 cursor-pointer"><span id="label_privacy">He leído y acepto la </span><a href="politica.html" target="_blank" class="text-blue-600 underline font-bold" id="link_policy">política de privacidad</a></label>
+                </div>
+                <div class="mt-6 pt-2 flex items-center justify-end">
+                    <button type="submit" class="bg-green-600 hover:bg-green-700 text-white px-8 py-4 rounded-xl font-bold text-xl shadow-lg w-full md:w-auto transition transform hover:scale-105" id="btn_submit">Enviar Check-in</button>
+                </div>
+            </form>
+            <div id="submissionStatus" class="mt-4 font-semibold text-center"></div>
+        </div>
+    </div>
+  </div>
+
+<script>
+    const translations = {
+      es: { lang_label: "Idioma / Language", welcome_title: "Registro de Huéspedes", welcome_text: "Va a iniciar el proceso de registro obligatorio para su estancia en nuestro alojamiento. Por favor, tenga a mano los documentos de identidad de todos los viajeros.", btn_continue: "Comenzar Check-in", title_adult_principal: "Ficha del Huésped", title_extra_adult: "Ficha de Adulto Adicional", label_arrival: "Fecha de Llegada al Alojamiento", label_name: "Nombre y Apellidos", label_birth: "Fecha de Nacimiento", label_doc_type: "Tipo de Documento", label_doc_number: "Número de Documento", label_support: "Número de Soporte", label_issue: "Fecha de Expedición", label_address: "Dirección habitual", label_city: "Localidad", label_zip: "Código Postal", label_prov: "Provincia", label_country: "País", label_phone: "Teléfono", label_email: "Email", label_nationality: "Nacionalidad", label_privacy: "He leído y acepto la ", link_policy: "política de privacidad", btn_adult: "➕ Añadir adulto", btn_minor: "➕ Añadir menor", btn_remove: "Eliminar", btn_submit: "Enviar Check-in", minor_title: "Ficha de Menor", minor_dni_required: "El DNI/NIE/Pasaporte es obligatorio para mayores de 14 años.", submit_success: "¡Check-in enviado con éxito! Gracias.", submit_error: "Error al enviar. Por favor, revise los datos.", error_must_be_adult: "Este huésped debe ser mayor de edad (18+).", error_must_be_minor: "Este huésped debe ser menor de edad (menos de 18).", submit_sending: "Enviando datos..." },
+      ca: { lang_label: "Idioma / Language", welcome_title: "Registre d'Hostes", welcome_text: "Aneu a iniciar el procés de registre obligatori per a la vostra estada al nostre allotjament. Si us plau, tingueu a mà els documents d'identitat de tots els viatgers.", btn_continue: "Començar Check-in", title_adult_principal: "Fitxa de l'Hoste", title_extra_adult: "Fitxa d'Adult Addicional", label_arrival: "Data d'Arribada a l'Allotjament", label_name: "Nom i Cognoms", label_birth: "Data de Naixement", label_doc_type: "Tipus de Document", label_doc_number: "Número de Document", label_support: "Número de Suport", label_issue: "Data d’Expedició", label_address: "Adreça habitual", label_city: "Localitat", label_zip: "Codi Postal", label_prov: "Província", label_country: "País", label_phone: "Telèfon", label_email: "Email", label_nationality: "Nacionalitat", label_privacy: "He llegit i accepto la ", link_policy: "política de privacitat", btn_adult: "➕ Afegir adult", btn_minor: "➕ Afegir menor", btn_remove: "Eliminar", btn_submit: "Enviar Check-in", minor_title: "Fitxa de Menor", minor_dni_required: "El DNI/NIE/Passaport és obligatori per a majors de 14 anys.", submit_success: "Check-in enviat amb èxit! Gràcies.", submit_error: "Error en l'enviament.", error_must_be_adult: "Aquest hoste ha de ser major d'edat (18+).", error_must_be_minor: "Aquest hoste ha de ser menor d'edat (menys de 18).", submit_sending: "Enviant dades..." },
+      en: { lang_label: "Idioma / Language", welcome_title: "Guest Registration", welcome_text: "You are about to start the mandatory registration process for your stay at our accommodation. Please have the ID documents of all travelers ready.", btn_continue: "Start Check-in", title_adult_principal: "Guest's Form", title_extra_adult: "Additional Adult's Form", label_arrival: "Arrival Date", label_name: "Full Name", label_birth: "Date of Birth", label_doc_type: "Document Type", label_doc_number: "Document Number", label_support: "Support Number", label_issue: "Issue Date", label_address: "Home Address", label_city: "City", label_zip: "Zip Code", label_prov: "State / Province", label_country: "Country", label_phone: "Phone", label_email: "Email", label_nationality: "Nationality", label_privacy: "I have read and accept the ", link_policy: "privacy policy", btn_adult: "➕ Add adult", btn_minor: "➕ Add minor", btn_remove: "Remove", btn_submit: "Submit Check-in", minor_title: "Minor's Form", minor_dni_required: "ID required for those over 14.", submit_success: "Check-in submitted successfully! Thank you.", submit_error: "Error submitting. Please check your data.", error_must_be_adult: "This guest must be an adult (18+).", error_must_be_minor: "This guest must be a minor (under 18).", submit_sending: "Submitting data..." },
+      fr: { lang_label: "Idioma / Language", welcome_title: "Enregistrement des Voyageurs", welcome_text: "Vous êtes sur le point de commencer le processus d'enregistrement obligatoire pour votre séjour dans notre hébergement. Veuillez préparer les pièces d'identité de tous les voyageurs.", btn_continue: "Commencer l'Enregistrement", title_adult_principal: "Fiche de l'Hôte", title_extra_adult: "Fiche d'Adulte Supplémentaire", label_arrival: "Date d'Arrivée", label_name: "Nom et Prénom", label_birth: "Date de Naissance", label_doc_type: "Type de document", label_doc_number: "Numéro de document", label_support: "Numéro de support", label_issue: "Date de délivrance", label_address: "Adresse habituelle", label_city: "Ville", label_zip: "Code Postal", label_prov: "Province", label_country: "Pays", label_phone: "Téléphone", label_email: "Email", label_nationality: "Nationalité", label_privacy: "J’ai lu et j’accepte la ", link_policy: "politique de confidentialité", btn_adult: "➕ Ajouter un adulte", btn_minor: "➕ Ajouter un mineur", btn_remove: "Supprimer", btn_submit: "Envoyer le Check-in", minor_title: "Fiche du Mineur", minor_dni_required: "DNI obligatoire pour les plus de 14 ans.", submit_success: "Check-in envoyé avec succès ! Merci.", submit_error: "Erreur lors de l'envoi.", error_must_be_adult: "Cet hôte doit être majeur (18+).", error_must_be_minor: "Cet hôte doit être mineur (moins de 18).", submit_sending: "Envoi des données..." }
+    };
+
+    window.onload = () => { updateLanguageUI(); };
+
+    function showForm() { 
+        document.getElementById("welcomeScreen").style.display = "none"; 
+        document.getElementById("checkinArea").classList.remove("hidden");
+    }
+
+    function updateLanguageUI() { 
+        const e = document.getElementById("languageSelect").value; 
+        const t = translations[e] || translations.es; 
+        Object.keys(t).forEach(key => { const n = document.getElementById(key); if (n) n.innerHTML = t[key]; }); 
+        renumberAdults(); renumberMinors(); updatePrivacyLink(); 
+    } 
+
+    document.getElementById("languageSelect").addEventListener("change", updateLanguageUI);
+
+    function updatePrivacyLink() { const e = document.getElementById("languageSelect").value; document.getElementById("link_policy").href = `politica.html?lang=${e}`; }
+
+    function calculateAge(birthDateString) {
+        if (!birthDateString) return 0;
+        const birthDate = new Date(birthDateString);
+        const today = new Date();
+        let age = today.getFullYear() - birthDate.getFullYear();
+        const m = today.getMonth() - birthDate.getMonth();
+        if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) { age--; }
+        return age;
+    }
+
+    let adultCounter = 1;
+    function addAdult() {
+        adultCounter++; 
+        const e = document.getElementById("languageSelect").value; 
+        const t = translations[e]; 
+        const n = document.getElementById("adultForms"); 
+        const o = document.createElement("div"); 
+        o.className = "adult-form-container border-t-4 border-purple-300 pt-6 mt-8 space-y-4"; 
+        o.id = `adult-form-${adultCounter}`;
+        
+        o.innerHTML = `
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-2xl font-bold adult-form-title text-purple-800">${t.title_extra_adult} #${adultCounter}</h3>
+                <button type="button" onclick="removeForm('adult-form-${adultCounter}')" class="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg text-sm shadow transition btn-remove">🗑️ ${t.btn_remove}</button>
+            </div>
+            <div><label class="block font-semibold">${t.label_name}</label><input type="text" name="Nombre_${adultCounter}" required class="w-full border rounded p-2" /></div>
+            <div><label class="block font-semibold">${t.label_birth}</label><input type="date" name="Nacimiento_${adultCounter}" required class="w-full border rounded p-2 birth-input-adult" /></div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div><label class="block font-semibold">${t.label_doc_type}</label><select name="TipoDoc_${adultCounter}" class="w-full border rounded p-2" required><option value="DNI">DNI</option><option value="NIE">NIE</option><option value="Pasaporte">Pasaporte</option></select></div>
+                <div><label class="block font-semibold">${t.label_doc_number}</label><input type="text" name="NumDoc_${adultCounter}" required class="w-full border rounded p-2" /></div>
+            </div>
+            <div><label class="block font-semibold">${t.label_support}</label><input type="text" name="Soporte_${adultCounter}" required class="w-full border rounded p-2" /></div>
+            <div><label class="block font-semibold">${t.label_issue}</label><input type="date" name="Expedicion_${adultCounter}" required class="w-full border rounded p-2" /></div>
+            <div><label class="block font-semibold">${t.label_address}</label><input type="text" name="Direccion_${adultCounter}" required class="w-full border rounded p-2" /></div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div><label class="block font-semibold">${t.label_city}</label><input type="text" name="Ciudad_${adultCounter}" required class="w-full border rounded p-2" /></div>
+                <div><label class="block font-semibold">${t.label_zip}</label><input type="text" name="CodigoPostal_${adultCounter}" required class="w-full border rounded p-2" /></div>
+            </div>
+            <div><label class="block font-semibold">${t.label_prov}</label><input type="text" name="Provincia_${adultCounter}" required class="w-full border rounded p-2" /></div>
+            <div><label class="block font-semibold">${t.label_country}</label><input type="text" name="Pais_${adultCounter}" required class="w-full border rounded p-2" /></div>
+            <div><label class="block font-semibold">${t.label_phone}</label><input type="tel" name="Telefono_${adultCounter}" required class="w-full border rounded p-2" /></div>
+            <div><label class="block font-semibold">${t.label_email}</label><input type="email" name="Email_${adultCounter}" required class="w-full border rounded p-2" /></div>
+            <div><label class="block font-semibold">${t.label_nationality}</label><input type="text" name="Nacionalidad_${adultCounter}" required class="w-full border rounded p-2" /></div>`; 
+        n.appendChild(o);
+    }
+
+    function renumberAdults() { 
+        const e = document.getElementById("languageSelect").value; 
+        const t = translations[e]; 
+        document.querySelectorAll(".adult-form-container").forEach((e, n) => { 
+            const o = n + 2; 
+            e.querySelector(".adult-form-title").innerHTML = `${t.title_extra_adult} #${o}`; 
+            e.querySelector(".btn-remove").innerHTML = `🗑️ ${t.btn_remove}`; 
+            e.querySelectorAll("input, select").forEach(input => { 
+                const nameBase = input.name.split("_")[0]; 
+                input.name = `${nameBase}_${o}`; 
+            }); 
+        }); 
+        adultCounter = document.querySelectorAll(".adult-form-container").length + 1; 
+    } 
+
+    let minorCounter = 0;
+    function addMinor() {
+        minorCounter++; 
+        const e = document.getElementById("languageSelect").value; 
+        const t = translations[e]; 
+        const n = document.getElementById("minorForms"); 
+        const o = document.createElement("div"); 
+        o.className = "minor-form-container border-2 border-blue-200 rounded-xl p-5 bg-blue-50 mt-6 shadow-sm space-y-4"; 
+        o.id = `minor-form-${minorCounter}`;
+        
+        o.innerHTML = `
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-xl font-bold minor-form-title text-blue-800">${t.minor_title} #${minorCounter}</h3>
+                <button type="button" onclick="removeForm('minor-form-${minorCounter}')" class="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg text-sm shadow transition btn-remove">🗑️ ${t.btn_remove}</button>
+            </div>
+            <div><label class="block font-semibold minor-label-name">${t.label_name}</label><input type="text" name="MenorNombre_${minorCounter}" required class="w-full border rounded p-2" /></div>
+            <div><label class="block font-semibold minor-label-birth">${t.label_birth}</label><input type="date" name="MenorNacimiento_${minorCounter}" required class="w-full border rounded p-2 birth-input-minor" /></div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div><label class="block font-semibold minor-label-doc_type">${t.label_doc_type}</label><select name="MenorTipoDoc_${minorCounter}" class="w-full border rounded p-2" required><option value="DNI">DNI</option><option value="NIE">NIE</option><option value="Pasaporte">Pasaporte</option></select></div>
+                <div><label class="block font-semibold minor-label-doc_number">${t.label_doc_number}</label><input type="text" name="MenorNumDoc_${minorCounter}" class="w-full border rounded p-2 doc-input-minor" /></div>
+            </div>`; 
+        n.appendChild(o);
+    }
+
+    function renumberMinors() { 
+        const e = document.getElementById("languageSelect").value; 
+        const t = translations[e]; 
+        document.querySelectorAll(".minor-form-container").forEach((e, n) => { 
+            const o = n + 1; 
+            e.querySelector(".minor-form-title").innerHTML = `${t.minor_title} #${o}`; 
+            e.querySelector(".btn-remove").innerHTML = `🗑️ ${t.btn_remove}`; 
+            e.querySelectorAll("input, select").forEach(input => { 
+                const nameBase = input.name.split("_")[0]; 
+                input.name = `${nameBase}_${o}`; 
+            }); 
+        }); 
+        minorCounter = document.querySelectorAll(".minor-form-container").length; 
+    }
+
+    function removeForm(e) { 
+        document.getElementById(e)?.remove(); 
+        renumberAdults(); 
+        renumberMinors(); 
+    }
+
+    const form = document.getElementById("checkinForm");
+    form.addEventListener("submit", async function(e) {
+        e.preventDefault();
+        const statusDiv = document.getElementById("submissionStatus");
+        const lang = document.getElementById("languageSelect").value;
+        const texts = translations[lang];
+        
+        // Limpiamos errores previos
+        document.querySelectorAll(".validation-error").forEach(el => el.remove());
+        document.querySelectorAll("input").forEach(input => input.style.borderColor = "");
+        
+        let isValid = true;
+
+        // 1. Validar edad de los ADULTOS (deben tener >= 18)
+        document.querySelectorAll('.birth-input-adult').forEach(input => {
+            if (input.value) {
+                const age = calculateAge(input.value);
+                if (age < 18) {
+                    isValid = false; 
+                    input.style.borderColor = "red";
+                    const err = document.createElement("p"); 
+                    err.className = "text-red-600 text-sm mt-1 validation-error"; 
+                    err.textContent = texts.error_must_be_adult;
+                    input.parentElement.appendChild(err);
+                }
+            }
+        });
+
+        // 2. Validar edad y DNI de los MENORES
+        document.querySelectorAll('.minor-form-container').forEach(mForm => {
+            const birthInput = mForm.querySelector('.birth-input-minor');
+            const docInput = mForm.querySelector('.doc-input-minor');
+            
+            if (birthInput.value) {
+                const age = calculateAge(birthInput.value);
+                
+                // Menor no puede tener 18 o más
+                if (age >= 18) {
+                    isValid = false; 
+                    birthInput.style.borderColor = "red";
+                    const err = document.createElement("p"); 
+                    err.className = "text-red-600 text-sm mt-1 validation-error"; 
+                    err.textContent = texts.error_must_be_minor;
+                    birthInput.parentElement.appendChild(err);
+                }
+                
+                // Si tiene entre 14 y 17, el DNI es obligatorio
+                if (age >= 14 && age < 18 && !docInput.value.trim()) {
+                    isValid = false; 
+                    docInput.style.borderColor = "red";
+                    const err = document.createElement("p"); 
+                    err.className = "text-red-600 text-sm mt-1 validation-error"; 
+                    err.textContent = texts.minor_dni_required;
+                    docInput.parentElement.appendChild(err);
+                }
+            }
+        });
+
+        if (!isValid) { 
+            statusDiv.textContent = texts.submit_error; 
+            statusDiv.style.color = "red"; 
+            return; 
+        }
+
+        statusDiv.textContent = texts.submit_sending; 
+        statusDiv.style.color = "orange";
+        
+        // --- PEGA AQUÍ TU URL DE GOOGLE APPS SCRIPT ---
+        const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwRBenqpPyPBWPrMu6Pimxou9wQRESgME69BlPgJ-2kU7BihCcSpd_5GPjHoKKr9h3OJA/exec"; 
+        
+        const formData = new FormData(form);
+        formData.append("TotalAdultos", document.querySelectorAll('input[name^="Nombre_"]').length);
+        formData.append("TotalMenores", document.querySelectorAll('.minor-form-container').length);
+        
+        try {
+            const response = await fetch(SCRIPT_URL, { 
+                method: "POST", 
+                body: formData,
+                mode: 'no-cors' // <-- ESTO EVITA EL "ERROR FANTASMA" DEL NAVEGADOR
+            });
+            
+            // Al usar no-cors, asumimos que si llega hasta aquí sin lanzar error de red, el envío ha funcionado.
+            document.getElementById("checkinForm").style.display = "none";
+            document.getElementById("languageSelectionContainer").style.display = "none";
+            statusDiv.textContent = texts.submit_success; 
+            statusDiv.style.color = "green"; 
+            statusDiv.classList.add("text-2xl", "py-8");
+            
+        } catch (error) { 
+            statusDiv.textContent = texts.submit_error; 
+            statusDiv.style.color = "red"; 
+        }
+    });
+</script>
+</body>
+</html>

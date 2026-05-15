@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Política de Privacidad - L'apartament d'Olga</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 p-4 sm:p-8">
+    <div class="max-w-3xl mx-auto bg-white rounded-xl shadow-xl p-6 sm:p-8">
+        <div id="policy-content">Cargando...</div>
+        <div class="text-center mt-6">
+            <button onclick="window.close();" class="bg-blue-500 text-white px-4 py-2 rounded">Cerrar</button>
+        </div>
+    </div>
+    <script>
+        const translations = {
+            es: `<h1 class="text-2xl font-bold mb-4">Política de Privacidad</h1><p class="mb-3">En cumplimiento de la legislación vigente en materia de protección de datos, le informamos que los datos personales recogidos en este formulario serán tratados exclusivamente para la gestión del alojamiento turístico "L’Apartament d’Olga".</p><p class="mb-3">Estos datos son necesarios para cumplir con las obligaciones de registro de viajeros impuestas por la normativa vigente.</p><p class="mb-3">Estos datos no serán cedidos a terceros, salvo obligación legal, y se conservarán durante el tiempo requerido por las autoridades competentes (Mossos d’Esquadra) durante un periodo de 3 años, tal y como exige la normativa.</p><p class="mb-3">Puede ejercer sus derechos de acceso, rectificación, cancelación y oposición mediante correo electrónico dirigido a <strong>ogmdelta@gmail.com</strong>.</p><p>Al completar el formulario de check-in, usted consiente expresamente el tratamiento de sus datos conforme a esta política.</p>`,
+            ca: `<h1 class="text-2xl font-bold mb-4">Política de Privacitat</h1><p class="mb-3">En compliment de la legislació vigent en matèria de protecció de dades, us informem que les dades personals recollides en aquest formulari seran tractades exclusivament per a la gestió de l'allotjament turístic "L’Apartament d’Olga".</p><p class="mb-3">Aquestes dades són necessàries per complir amb les obligacions de registre de viatgers imposades per la normativa vigent.</p><p class="mb-3">Aquestes dades no se cediran a tercers, llevat d'obligació legal, i es conservaran durant el temps requerit per les autoritats competents (Mossos d’Esquadra) durant un període de 3 anys, tal com exigeix la normativa.</p><p class="mb-3">Podeu exercir els vostres drets d'accés, rectificació, cancel·lació i oposició mitjançant correu electrònic adreçat a <strong>ogmdelta@gmail.com</strong>.</p><p>En completar el formulari de check-in, consentiu expressament el tractament de les vostres dades d'acord amb aquesta política.</p>`,
+            en: `<h1 class="text-2xl font-bold mb-4">Privacy Policy</h1><p class="mb-3">In compliance with current data protection legislation, we inform you that the personal data collected in this form will be processed exclusively for the management of the tourist accommodation "L’Apartament d’Olga".</p><p class="mb-3">This data is necessary to comply with the traveler registration obligations imposed by current regulations.</p><p class="mb-3">This data will not be transferred to third parties, except under legal obligation, and will be kept for the time required by the competent authorities (Mossos d’Esquadra) for a period of 3 years, as required by law.</p><p class="mb-3">You can exercise your rights of access, rectification, cancellation, and opposition by sending an email to <strong>ogmdelta@gmail.com</strong>.</p><p>By completing the check-in form, you expressly consent to the processing of your data in accordance with this policy.</p>`,
+            fr: `<h1 class="text-2xl font-bold mb-4">Politique de Confidentialité</h1><p class="mb-3">Conformément à la législation en vigueur sur la protection des données, nous vous informons que les données personnelles collectées dans ce formulaire seront traitées exclusivement pour la gestion de l'hébergement touristique "L’Apartament d'Olga".</p><p class="mb-3">Ces données sont nécessaires pour respecter les obligations d'enregistrement des voyageurs imposées par la réglementation en vigueur.</p><p class="mb-3">Ces données ne seront pas cédées à des tiers, sauf obligation légale, et seront conservées pendant la durée requise par les autorités compétentes (Mossos d’Esquadra) pour une période de 3 ans, comme l'exige la réglementation.</p><p class="mb-3">Vous pouvez exercer vos droits d'accès, de rectification, d'annulation et d'opposition par courrier électronique adressé à <strong>ogmdelta@gmail.com</strong>.</p><p>En remplissant le formulaire de check-in, vous consentez expressément au traitement de vos données conformément à cette politique.</p>`
+        };
+        const params = new URLSearchParams(window.location.search);
+        const lang = params.get('lang') || 'es';
+        document.getElementById('policy-content').innerHTML = translations[lang] || translations['es'];
+    </script>
+</body>
+</html>

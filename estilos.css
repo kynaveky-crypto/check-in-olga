@@ -1,0 +1,28 @@
+/* Estilos para la imagen de fondo */
+#welcomeScreen {
+  position: relative;
+  overflow: hidden;
+  border-radius: 0.75rem;
+  background-color: #333; /* Fondo gris oscuro de respaldo */
+}
+
+#welcomeScreen::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  /* Asegúrate de que el nombre aquí coincide con tu archivo de imagen */
+  background-image: url('imatge.jpg'); 
+  background-size: cover;
+  background-position: center;
+  z-index: 1;
+  filter: blur(2px) brightness(0.7); /* Desenfoque y oscuridad para que el texto resalte */
+}
+
+#welcomeContent {
+  position: relative;
+  z-index: 2; /* Esto asegura que el texto esté por encima de la imagen */
+  color: white;
+}
