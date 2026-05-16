@@ -462,32 +462,47 @@
         }
     }
 
-    // ─── PREPROCESAMIENTO DE IMAGEN PARA MEJORAR OCR ─────────────────────────────
-    function preprocessImageForOCR(sourceDataUrl) {
+    // ─── PREPROCESAMIENTO ADAPTATIVO (umbral de Otsu) ────────────────────────────
+    function preprocessImageForOCR(sourceDataUrl, cropBottom = false) {
         return new Promise((resolve) => {
             const img = new Image();
             img.onload = () => {
-                const canvas = document.createElement('canvas');
-                // Escalar al doble si la imagen es pequeña (mejora OCR)
                 const scale = Math.max(1, Math.min(3, 2000 / img.width));
-                canvas.width  = img.width  * scale;
-                canvas.height = img.height * scale;
+                const srcW = img.width, srcH = cropBottom ? Math.floor(img.height * 0.35) : img.height;
+                const srcY = cropBottom ? Math.floor(img.height * 0.65) : 0;
+                const canvas = document.createElement('canvas');
+                canvas.width = srcW * scale; canvas.height = srcH * scale;
                 const ctx = canvas.getContext('2d');
-                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-
-                // Convertir a escala de grises y aumentar contraste
+                ctx.drawImage(img, 0, srcY, srcW, srcH, 0, 0, canvas.width, canvas.height);
                 const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
                 const data = imageData.data;
-                for (let i = 0; i < data.length; i += 4) {
-                    // Luminancia (escala de grises perceptual)
-                    const gray = 0.299 * data[i] + 0.587 * data[i+1] + 0.114 * data[i+2];
-                    // Contraste agresivo: mapear hacia blanco o negro
-                    const contrasted = gray > 128 ? Math.min(255, gray * 1.4) : Math.max(0, gray * 0.6);
-                    data[i] = data[i+1] = data[i+2] = contrasted;
-                    data[i+3] = 255;
+                // Paso 1: escala de grises
+                const gray = new Uint8Array(data.length / 4);
+                for (let i = 0, j = 0; i < data.length; i += 4, j++)
+                    gray[j] = Math.round(0.299 * data[i] + 0.587 * data[i+1] + 0.114 * data[i+2]);
+                // Paso 2: umbral de Otsu
+                const hist = new Array(256).fill(0);
+                gray.forEach(v => hist[v]++);
+                const total = gray.length;
+                let sumB = 0, wB = 0, sum = 0;
+                for (let i = 0; i < 256; i++) sum += i * hist[i];
+                let maxVar = 0, threshold = 128;
+                for (let t = 0; t < 256; t++) {
+                    wB += hist[t]; if (!wB) continue;
+                    const wF = total - wB; if (!wF) break;
+                    sumB += t * hist[t];
+                    const mB = sumB / wB, mF = (sum - sumB) / wF;
+                    const v = wB * wF * (mB - mF) ** 2;
+                    if (v > maxVar) { maxVar = v; threshold = t; }
+                }
+                // Paso 3: binarizar con umbral adaptativo
+                for (let j = 0; j < gray.length; j++) {
+                    const v = gray[j] > threshold ? 255 : 0;
+                    const i = j * 4;
+                    data[i] = data[i+1] = data[i+2] = v; data[i+3] = 255;
                 }
                 ctx.putImageData(imageData, 0, 0);
-                resolve(canvas.toDataURL('image/png')); // PNG mejor que JPEG para OCR
+                resolve(canvas.toDataURL('image/png'));
             };
             img.src = sourceDataUrl;
         });
@@ -498,24 +513,24 @@
         document.getElementById('scannerInterface').classList.add('hidden');
         document.getElementById('scanningLoader').classList.remove('hidden');
         try {
-            // Preprocesar imagen frontal
-            const processedFront = await preprocessImageForOCR(capturedData.front);
             let fullText = '';
-
-            const resultFront = await Tesseract.recognize(processedFront, 'spa+eng', {
-                logger: m => { if (m.status === 'recognizing text') console.log(`OCR front: ${Math.round(m.progress * 100)}%`); }
+            // Pasada 1: imagen frontal completa
+            const processedFront = await preprocessImageForOCR(capturedData.front, false);
+            const r1 = await Tesseract.recognize(processedFront, 'spa+eng', { logger: m => {} });
+            fullText += r1.data.text + '\n';
+            // Pasada 2: zona inferior del frontal (MRZ)
+            const processedMRZ = await preprocessImageForOCR(capturedData.front, true);
+            const r2 = await Tesseract.recognize(processedMRZ, 'eng', {
+                logger: m => {},
+                tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<'
             });
-            fullText += resultFront.data.text + '\n';
-
-            // Si tenemos reverso (DNI), procesarlo también para IDESP
+            fullText += r2.data.text + '\n';
+            // Pasada 3: reverso (DNI) - IDESP y domicilio
             if (capturedData.back) {
-                const processedBack = await preprocessImageForOCR(capturedData.back);
-                const resultBack = await Tesseract.recognize(processedBack, 'spa+eng', {
-                    logger: m => { if (m.status === 'recognizing text') console.log(`OCR back: ${Math.round(m.progress * 100)}%`); }
-                });
-                fullText += resultBack.data.text + '\n';
+                const processedBack = await preprocessImageForOCR(capturedData.back, false);
+                const r3 = await Tesseract.recognize(processedBack, 'spa+eng', { logger: m => {} });
+                fullText += r3.data.text + '\n';
             }
-
             console.log('=== OCR RAW TEXT ===\n', fullText);
             processOCR(fullText);
         } catch (err) {
@@ -527,123 +542,110 @@
         }
     }
 
-    // ─── PARSER OCR COMPLETO PARA DNI ESPAÑOL Y PASAPORTE ───────────────────────
+    // ─── PARSER OCR MEJORADO ─────────────────────────────────────────────────────
+    function normalizeMRZ(line) {
+        // Quitar espacios, corregir errores comunes de OCR en MRZ
+        return line.replace(/\s/g, '')
+            .replace(/[oO]/g, '0').replace(/[lI|]/g, '1')
+            .replace(/[B]/g, (c, i, s) => /^\d/.test(s[i-1] || '') ? '8' : c)
+            .toUpperCase();
+    }
+
     function processOCR(text) {
-        const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 2);
+        // Normalizar texto: quitar guiones de corte de línea, compactar espacios
+        const cleanText = text.replace(/([A-Z])-\n([A-Z])/g, '$1$2').replace(/[ \t]+/g, ' ');
+        const lines = cleanText.split('\n').map(l => l.trim()).filter(l => l.length > 2);
         const info = {
-            TipoDoc:      currentDocType,
-            NumDoc:       '',
-            Soporte:      '',   // IDESP / NUM SOPORT
-            Nombre:       '',
-            Apellidos:    '',
-            Sexo:         '',
-            Nacimiento:   '',
-            Expedicion:   '',
-            Nacionalidad: '',
-            Direccion:    '',
-            Localidad:    '',
-            Pais:         'ESPAÑA'
+            TipoDoc: currentDocType, NumDoc: '', Soporte: '', Nombre: '',
+            Apellidos: '', Sexo: '', Nacimiento: '', Expedicion: '',
+            Nacionalidad: '', Direccion: '', Localidad: '', Pais: 'ESPAÑA'
         };
 
-        // ── 1. BUSCAR LÍNEAS MRZ (Machine Readable Zone) ──────────────────────
-        // El DNI español tiene 3 líneas MRZ de 30 caracteres cada una
-        const mrzLines = lines.filter(l => /^[A-Z0-9<]{20,}$/.test(l.replace(/\s/g, '')));
-        if (mrzLines.length >= 2) {
-            parseMRZ(mrzLines, info);
-        }
+        // ── 1. BUSCAR LÍNEAS MRZ (tolerar espacios y errores OCR) ─────────────
+        const mrzCandidates = lines
+            .map(l => normalizeMRZ(l))
+            .filter(l => l.length >= 20 && /^[A-Z0-9<]{20,}$/.test(l));
+        if (mrzCandidates.length >= 2) parseMRZ(mrzCandidates, info);
 
-        // ── 2. FALLBACKS por REGEX si MRZ falla ───────────────────────────────
-
-        // Número de documento DNI: 8 dígitos + 1 letra
+        // ── 2. NÚMERO DE DOCUMENTO ────────────────────────────────────────────
         if (!info.NumDoc) {
-            const dniMatch = text.match(/\b([0-9]{8}[\-\s]?[A-Z])\b/i);
-            if (dniMatch) info.NumDoc = dniMatch[1].replace(/[\-\s]/, '').toUpperCase();
+            // DNI: 8 dígitos + letra, tolerando espacio o guión
+            const m = cleanText.match(/\b(\d{7,8}[\s\-]?[A-HJ-NP-TV-Z])\b/i);
+            if (m) info.NumDoc = m[1].replace(/[\s\-]/g, '').toUpperCase();
         }
-
-        // Número de Pasaporte: 2-3 letras + 6-7 dígitos
         if (!info.NumDoc && currentDocType === 'Pasaporte') {
-            const passMatch = text.match(/\b([A-Z]{2,3}[0-9]{6,7})\b/i);
-            if (passMatch) info.NumDoc = passMatch[1].toUpperCase();
+            const m = cleanText.match(/\b([A-Z]{2,3}[\s]?\d{6,7})\b/i);
+            if (m) info.NumDoc = m[1].replace(/\s/g, '').toUpperCase();
         }
 
-        // IDESP / Número de Soporte: formato "AAA XXXXXXXX" o "IDESP: ..."
+        // ── 3. NÚMERO DE SOPORTE (IDESP) ──────────────────────────────────────
         if (!info.Soporte) {
-            const idesp1 = text.match(/IDESP[:\s]+([A-Z0-9]{6,12})/i);
-            const idesp2 = text.match(/NUM\.?\s*SUPORT[:\s]+([A-Z0-9]{6,12})/i);
-            const idesp3 = text.match(/\b([A-Z]{3}[0-9]{6})\b/);
-            if (idesp1) info.Soporte = idesp1[1].toUpperCase();
-            else if (idesp2) info.Soporte = idesp2[1].toUpperCase();
-            else if (idesp3) info.Soporte = idesp3[1].toUpperCase();
+            const m1 = cleanText.match(/(?:IDESP|NUM\.?\s*SUP(?:ORT)?|SOPORTE)[:\s]*([A-Z0-9]{4,12})/i);
+            const m2 = cleanText.match(/\b([A-Z]{3}\d{6})\b/);
+            if (m1) info.Soporte = m1[1].toUpperCase();
+            else if (m2) info.Soporte = m2[1].toUpperCase();
         }
 
-        // Sexo
+        // ── 4. SEXO ───────────────────────────────────────────────────────────
         if (!info.Sexo) {
-            if (/\bSEXO\s*[:\-]?\s*(H|M|HOMBRE|MUJER|MASCULINO|FEMENINO|MALE|FEMALE)\b/i.test(text)) {
-                const sx = text.match(/SEXO\s*[:\-]?\s*(H|M|HOMBRE|MUJER|MASCULINO|FEMENINO|MALE|FEMALE)/i);
-                if (sx) info.Sexo = sx[1].toUpperCase().startsWith('H') || sx[1].toUpperCase() === 'M' && sx[1].length === 1 ? 'M' : 'F';
-            } else if (/\b(MASCULINO|MALE|HOMBRE)\b/i.test(text)) { info.Sexo = 'M'; }
-            else if (/\b(FEMENINO|FEMALE|MUJER)\b/i.test(text)) { info.Sexo = 'F'; }
+            const mS = cleanText.match(/(?:SEXO|SEX)[:\s]*([HMF]|HOMBRE|MUJER|MALE|FEMALE|MASCULINO|FEMENINO)/i);
+            if (mS) {
+                const v = mS[1].toUpperCase();
+                info.Sexo = (v === 'H' || v === 'HOMBRE' || v === 'MALE' || v === 'MASCULINO') ? 'M' : 'F';
+            } else if (/\b(HOMBRE|MASCULINO|MALE)\b/i.test(cleanText)) info.Sexo = 'M';
+            else if (/\b(MUJER|FEMENINO|FEMALE)\b/i.test(cleanText)) info.Sexo = 'F';
         }
 
-        // Fechas: DD MMM AA o DD/MM/YYYY
-        const meses = { ENE:1, FEB:2, MAR:3, ABR:4, MAY:5, JUN:6, JUL:7, AGO:8, SEP:9, OCT:10, NOV:11, DIC:12, JAN:1, AUG:8 };
-        if (!info.Nacimiento || !info.Expedicion) {
-            // Formato DD MMM YY/YYYY (típico DNI)
-            const dateAbbrRe = /(\d{2})\s+(ENE|FEB|MAR|ABR|MAY|JUN|JUL|AGO|SEP|OCT|NOV|DIC|JAN|AUG)\s+(\d{2,4})/gi;
-            let dm;
-            const foundDates = [];
-            while ((dm = dateAbbrRe.exec(text)) !== null) {
-                let year = parseInt(dm[3]);
-                if (year < 100) year += year < 30 ? 2000 : 1900;
-                const month = String(meses[dm[2].toUpperCase()]).padStart(2, '0');
-                const day   = dm[1].padStart(2, '0');
-                foundDates.push({ iso: `${year}-${month}-${day}`, year });
-            }
-            // Formato DD/MM/YYYY
-            const dateSlashRe = /(\d{2})[\/\-\.](\d{2})[\/\-\.](\d{4})/g;
-            while ((dm = dateSlashRe.exec(text)) !== null) {
-                const year = parseInt(dm[3]);
-                foundDates.push({ iso: `${dm[3]}-${dm[2]}-${dm[1]}`, year });
-            }
-            // Asignar: la más antigua = nacimiento, la más reciente = expedición
-            foundDates.sort((a, b) => a.year - b.year);
-            if (foundDates.length >= 1 && !info.Nacimiento) info.Nacimiento = foundDates[0].iso;
-            if (foundDates.length >= 2 && !info.Expedicion) info.Expedicion = foundDates[foundDates.length - 1].iso;
+        // ── 5. FECHAS ─────────────────────────────────────────────────────────
+        const meses = { ENE:1,FEB:2,MAR:3,ABR:4,MAY:5,JUN:6,JUL:7,AGO:8,SEP:9,OCT:10,NOV:11,DIC:12,JAN:1,AUG:8 };
+        const foundDates = [];
+        // Formato "DD ENE YYYY" o "DD ENE YY"
+        const re1 = /(\d{1,2})[\s\-]+(ENE|FEB|MAR|ABR|MAY|JUN|JUL|AGO|SEP|OCT|NOV|DIC|JAN|AUG)[\s\-]+(\d{2,4})/gi;
+        let dm;
+        while ((dm = re1.exec(cleanText)) !== null) {
+            let yr = parseInt(dm[3]); if (yr < 100) yr += yr < 30 ? 2000 : 1900;
+            foundDates.push({ iso: `${yr}-${String(meses[dm[2].toUpperCase()]).padStart(2,'0')}-${dm[1].padStart(2,'0')}`, yr });
         }
+        // Formato DD/MM/YYYY o DD-MM-YYYY
+        const re2 = /(\d{2})[\/.\-](\d{2})[\/.\-](\d{4})/g;
+        while ((dm = re2.exec(cleanText)) !== null) {
+            foundDates.push({ iso: `${dm[3]}-${dm[2]}-${dm[1]}`, yr: parseInt(dm[3]) });
+        }
+        foundDates.sort((a, b) => a.yr - b.yr);
+        if (foundDates.length >= 1 && !info.Nacimiento) info.Nacimiento = foundDates[0].iso;
+        if (foundDates.length >= 2 && !info.Expedicion) info.Expedicion = foundDates[foundDates.length - 1].iso;
 
-        // Nacionalidad
+        // ── 6. NACIONALIDAD ───────────────────────────────────────────────────
         if (!info.Nacionalidad) {
-            const natMatch = text.match(/NACIONAL(?:IDAD)?[:\s]+([A-ZÁÉÍÓÚÑ]{3,20})/i);
-            if (natMatch) info.Nacionalidad = natMatch[1].toUpperCase();
-            else if (/\bESPAÑOLA?\b/i.test(text)) info.Nacionalidad = 'ESPAÑOLA';
-            else if (/\bSPANISH\b/i.test(text)) info.Nacionalidad = 'ESPAÑOLA';
-            else if (/\bESP\b/.test(text)) info.Nacionalidad = 'ESPAÑOLA';
+            const mN = cleanText.match(/NACIONAL(?:IDAD)?[:\s]+([A-ZÁÉÍÓÚÑ]{3,20})/i);
+            if (mN) info.Nacionalidad = mN[1].toUpperCase();
+            else if (/\bESPAÑOL[AO]?\b|\bSPANISH\b/i.test(cleanText)) info.Nacionalidad = 'ESPAÑOLA';
+            else if (/\bESP\b/.test(cleanText)) info.Nacionalidad = 'ESPAÑOLA';
         }
 
-        // Nombre y Apellidos desde líneas de texto (antes de campos clave)
+        // ── 7. NOMBRE Y APELLIDOS ─────────────────────────────────────────────
         if (!info.Nombre) {
-            // Buscar línea que parezca "APELLIDO APELLIDO NOMBRE"
+            const skipWords = /ESPAÑA|ESPAGNE|REINO|UNION|EUROPEA|DOCUMENTO|NATIONAL|IDENTIDAD|VALIDA|IDESP|SEXO|SOPORTE|NACIMIENTO|EXPEDICION|FIRMA/i;
             for (const line of lines) {
-                if (/^[A-ZÁÉÍÓÚÑ ]{8,50}$/.test(line) &&
-                    !/ESPAÑA|ESPAGNE|REINO|UNION|DOCUMENTO|NATIONAL|IDENTIDAD|VALIDA|IDESP|SEXO|SOPORTE/.test(line)) {
+                if (/^[A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ ]{6,48}$/.test(line) && !skipWords.test(line)) {
                     const parts = line.trim().split(/\s+/);
-                    if (parts.length >= 2 && parts.length <= 6) {
-                        info.Nombre    = parts[parts.length - 1];
-                        info.Apellidos = parts.slice(0, parts.length - 1).join(' ');
+                    if (parts.length >= 2 && parts.length <= 5) {
+                        info.Nombre = parts[parts.length - 1];
+                        info.Apellidos = parts.slice(0, -1).join(' ');
                         break;
                     }
                 }
             }
         }
 
-        // Dirección (típicamente en el reverso del DNI)
+        // ── 8. DIRECCIÓN Y LOCALIDAD ──────────────────────────────────────────
         if (!info.Direccion) {
-            const addrMatch = text.match(/(?:DOMICILIO|DIRECCIÓN|DIRECCION|C\/|CL |AV\.|CALLE|AVDA)[:\s]+(.{5,60})/i);
-            if (addrMatch) info.Direccion = addrMatch[1].trim();
+            const mD = cleanText.match(/(?:DOMICILIO|DIRECCI[OÓ]N|C[\/.\s]|CL[\s.]|AV(?:DA)?[\s.]|CALLE|CARRER)[:\s]*(.{5,70}?)(?=\n|$)/i);
+            if (mD) info.Direccion = mD[1].trim();
         }
         if (!info.Localidad) {
-            const locMatch = text.match(/(?:MUNICIPIO|LOCALIDAD|LOCALITAT|POBLACION|CIUDAD)[:\s]+([A-ZÁÉÍÓÚÑ ]{3,40})/i);
-            if (locMatch) info.Localidad = locMatch[1].trim();
+            const mL = cleanText.match(/(?:MUNICIPIO|LOCALIDAD|LOCALITAT|POBLACI[OÓ]N|CIUDAD)[:\s]*([A-ZÁÉÍÓÚÑ ]{3,40})/i);
+            if (mL) info.Localidad = mL[1].trim();
         }
 
         extractedInfo = info;
