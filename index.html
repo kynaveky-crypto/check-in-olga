@@ -131,16 +131,11 @@
                     </div>
 
                     <div id="ocrConfirmation" class="hidden space-y-4 animate-fade-in">
-                        <div class="bg-green-50 border-2 border-green-200 p-4 rounded-xl">
-                            <h4 class="text-green-800 font-bold flex items-center mb-2">
-                                <span class="mr-2 text-xl">✅</span> Datos Leídos Correctamente
-                            </h4>
-                            <p class="text-sm text-green-700 mb-4">Por favor, verifique que la información extraída sea correcta.</p>
-                            <div id="ocrFields" class="grid grid-cols-1 gap-3 text-sm"></div>
-                        </div>
-                        <div class="flex gap-3">
-                            <button type="button" onclick="restartScanner()" class="flex-1 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold py-3 rounded-xl transition">Repetir Escaneo</button>
-                            <button type="button" onclick="confirmOCRData()" class="flex-1 bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-xl shadow-md transition">Confirmar y Seguir</button>
+                        <!-- El header (verde/amarillo/rojo) se inserta dinámicamente -->
+                        <div id="ocrFields" class="grid grid-cols-1 gap-3 text-sm"></div>
+                        <div class="flex gap-3 pt-2">
+                            <button type="button" onclick="restartScanner()" class="flex-1 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold py-3 rounded-xl transition">🔄 Repetir Escaneo</button>
+                            <button type="button" onclick="confirmOCRData()" class="flex-1 bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-xl shadow-md transition">✅ Confirmar y Seguir</button>
                         </div>
                     </div>
 
@@ -303,64 +298,329 @@
         }
     }
 
+    // ─── PREPROCESAMIENTO DE IMAGEN PARA MEJORAR OCR ─────────────────────────────
+    function preprocessImageForOCR(sourceDataUrl) {
+        return new Promise((resolve) => {
+            const img = new Image();
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                // Escalar al doble si la imagen es pequeña (mejora OCR)
+                const scale = Math.max(1, Math.min(3, 2000 / img.width));
+                canvas.width  = img.width  * scale;
+                canvas.height = img.height * scale;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+                // Convertir a escala de grises y aumentar contraste
+                const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                const data = imageData.data;
+                for (let i = 0; i < data.length; i += 4) {
+                    // Luminancia (escala de grises perceptual)
+                    const gray = 0.299 * data[i] + 0.587 * data[i+1] + 0.114 * data[i+2];
+                    // Contraste agresivo: mapear hacia blanco o negro
+                    const contrasted = gray > 128 ? Math.min(255, gray * 1.4) : Math.max(0, gray * 0.6);
+                    data[i] = data[i+1] = data[i+2] = contrasted;
+                    data[i+3] = 255;
+                }
+                ctx.putImageData(imageData, 0, 0);
+                resolve(canvas.toDataURL('image/png')); // PNG mejor que JPEG para OCR
+            };
+            img.src = sourceDataUrl;
+        });
+    }
+
     async function finishCapture() {
         if (currentStream) currentStream.getTracks().forEach(track => track.stop());
+        document.getElementById('scannerInterface').classList.add('hidden');
         document.getElementById('scanningLoader').classList.remove('hidden');
         try {
-            const result = await Tesseract.recognize(capturedData.front, 'spa+cat+eng', {
-                logger: m => console.log(m)
+            // Preprocesar imagen frontal
+            const processedFront = await preprocessImageForOCR(capturedData.front);
+            let fullText = '';
+
+            const resultFront = await Tesseract.recognize(processedFront, 'spa+eng', {
+                logger: m => { if (m.status === 'recognizing text') console.log(`OCR front: ${Math.round(m.progress * 100)}%`); }
             });
-            processOCR(result.data.text);
+            fullText += resultFront.data.text + '\n';
+
+            // Si tenemos reverso (DNI), procesarlo también para IDESP
+            if (capturedData.back) {
+                const processedBack = await preprocessImageForOCR(capturedData.back);
+                const resultBack = await Tesseract.recognize(processedBack, 'spa+eng', {
+                    logger: m => { if (m.status === 'recognizing text') console.log(`OCR back: ${Math.round(m.progress * 100)}%`); }
+                });
+                fullText += resultBack.data.text + '\n';
+            }
+
+            console.log('=== OCR RAW TEXT ===\n', fullText);
+            processOCR(fullText);
         } catch (err) {
-            console.error("OCR Error:", err);
-            showConfirmationUI();
+            console.error('OCR Error:', err);
+            extractedInfo = {};
+            showConfirmationUI(false);
         } finally {
             document.getElementById('scanningLoader').classList.add('hidden');
-            document.getElementById('scannerInterface').classList.add('hidden');
         }
     }
 
+    // ─── PARSER OCR COMPLETO PARA DNI ESPAÑOL Y PASAPORTE ───────────────────────
     function processOCR(text) {
-        console.log("OCR Extracted Text:", text);
-        const info = { Nombre: "", NumDoc: "", Nacimiento: "", Expedicion: "", Nacionalidad: "ESP" };
-        const dniMatch = text.match(/\b(\d{8}[A-Z])\b/i);
-        if (dniMatch) info.NumDoc = dniMatch[1].toUpperCase();
-        const dateMatches = text.match(/\b(\d{2})[/\-. ](\d{2})[/\-. ](\d{4})\b/g);
-        if (dateMatches) {
-            dateMatches.forEach(dateStr => {
-                const parts = dateStr.split(/[/\-. ]/);
-                const year = parseInt(parts[2]);
-                const isoDate = `${parts[2]}-${parts[1]}-${parts[0]}`;
-                if (year < 2010) info.Nacimiento = isoDate;
-                else if (year >= 2010 && year <= 2035) info.Expedicion = isoDate;
-            });
+        const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 2);
+        const info = {
+            TipoDoc:      currentDocType,
+            NumDoc:       '',
+            Soporte:      '',   // IDESP / NUM SOPORT
+            Nombre:       '',
+            Apellidos:    '',
+            Sexo:         '',
+            Nacimiento:   '',
+            Expedicion:   '',
+            Nacionalidad: '',
+            Direccion:    '',
+            Localidad:    '',
+            Pais:         'ESPAÑA'
+        };
+
+        // ── 1. BUSCAR LÍNEAS MRZ (Machine Readable Zone) ──────────────────────
+        // El DNI español tiene 3 líneas MRZ de 30 caracteres cada una
+        const mrzLines = lines.filter(l => /^[A-Z0-9<]{20,}$/.test(l.replace(/\s/g, '')));
+        if (mrzLines.length >= 2) {
+            parseMRZ(mrzLines, info);
         }
+
+        // ── 2. FALLBACKS por REGEX si MRZ falla ───────────────────────────────
+
+        // Número de documento DNI: 8 dígitos + 1 letra
+        if (!info.NumDoc) {
+            const dniMatch = text.match(/\b([0-9]{8}[\-\s]?[A-Z])\b/i);
+            if (dniMatch) info.NumDoc = dniMatch[1].replace(/[\-\s]/, '').toUpperCase();
+        }
+
+        // Número de Pasaporte: 2-3 letras + 6-7 dígitos
+        if (!info.NumDoc && currentDocType === 'Pasaporte') {
+            const passMatch = text.match(/\b([A-Z]{2,3}[0-9]{6,7})\b/i);
+            if (passMatch) info.NumDoc = passMatch[1].toUpperCase();
+        }
+
+        // IDESP / Número de Soporte: formato "AAA XXXXXXXX" o "IDESP: ..."
+        if (!info.Soporte) {
+            const idesp1 = text.match(/IDESP[:\s]+([A-Z0-9]{6,12})/i);
+            const idesp2 = text.match(/NUM\.?\s*SUPORT[:\s]+([A-Z0-9]{6,12})/i);
+            const idesp3 = text.match(/\b([A-Z]{3}[0-9]{6})\b/);
+            if (idesp1) info.Soporte = idesp1[1].toUpperCase();
+            else if (idesp2) info.Soporte = idesp2[1].toUpperCase();
+            else if (idesp3) info.Soporte = idesp3[1].toUpperCase();
+        }
+
+        // Sexo
+        if (!info.Sexo) {
+            if (/\bSEXO\s*[:\-]?\s*(H|M|HOMBRE|MUJER|MASCULINO|FEMENINO|MALE|FEMALE)\b/i.test(text)) {
+                const sx = text.match(/SEXO\s*[:\-]?\s*(H|M|HOMBRE|MUJER|MASCULINO|FEMENINO|MALE|FEMALE)/i);
+                if (sx) info.Sexo = sx[1].toUpperCase().startsWith('H') || sx[1].toUpperCase() === 'M' && sx[1].length === 1 ? 'M' : 'F';
+            } else if (/\b(MASCULINO|MALE|HOMBRE)\b/i.test(text)) { info.Sexo = 'M'; }
+            else if (/\b(FEMENINO|FEMALE|MUJER)\b/i.test(text)) { info.Sexo = 'F'; }
+        }
+
+        // Fechas: DD MMM AA o DD/MM/YYYY
+        const meses = { ENE:1, FEB:2, MAR:3, ABR:4, MAY:5, JUN:6, JUL:7, AGO:8, SEP:9, OCT:10, NOV:11, DIC:12, JAN:1, AUG:8 };
+        if (!info.Nacimiento || !info.Expedicion) {
+            // Formato DD MMM YY/YYYY (típico DNI)
+            const dateAbbrRe = /(\d{2})\s+(ENE|FEB|MAR|ABR|MAY|JUN|JUL|AGO|SEP|OCT|NOV|DIC|JAN|AUG)\s+(\d{2,4})/gi;
+            let dm;
+            const foundDates = [];
+            while ((dm = dateAbbrRe.exec(text)) !== null) {
+                let year = parseInt(dm[3]);
+                if (year < 100) year += year < 30 ? 2000 : 1900;
+                const month = String(meses[dm[2].toUpperCase()]).padStart(2, '0');
+                const day   = dm[1].padStart(2, '0');
+                foundDates.push({ iso: `${year}-${month}-${day}`, year });
+            }
+            // Formato DD/MM/YYYY
+            const dateSlashRe = /(\d{2})[\/\-\.](\d{2})[\/\-\.](\d{4})/g;
+            while ((dm = dateSlashRe.exec(text)) !== null) {
+                const year = parseInt(dm[3]);
+                foundDates.push({ iso: `${dm[3]}-${dm[2]}-${dm[1]}`, year });
+            }
+            // Asignar: la más antigua = nacimiento, la más reciente = expedición
+            foundDates.sort((a, b) => a.year - b.year);
+            if (foundDates.length >= 1 && !info.Nacimiento) info.Nacimiento = foundDates[0].iso;
+            if (foundDates.length >= 2 && !info.Expedicion) info.Expedicion = foundDates[foundDates.length - 1].iso;
+        }
+
+        // Nacionalidad
+        if (!info.Nacionalidad) {
+            const natMatch = text.match(/NACIONAL(?:IDAD)?[:\s]+([A-ZÁÉÍÓÚÑ]{3,20})/i);
+            if (natMatch) info.Nacionalidad = natMatch[1].toUpperCase();
+            else if (/\bESPAÑOLA?\b/i.test(text)) info.Nacionalidad = 'ESPAÑOLA';
+            else if (/\bSPANISH\b/i.test(text)) info.Nacionalidad = 'ESPAÑOLA';
+            else if (/\bESP\b/.test(text)) info.Nacionalidad = 'ESPAÑOLA';
+        }
+
+        // Nombre y Apellidos desde líneas de texto (antes de campos clave)
+        if (!info.Nombre) {
+            // Buscar línea que parezca "APELLIDO APELLIDO NOMBRE"
+            for (const line of lines) {
+                if (/^[A-ZÁÉÍÓÚÑ ]{8,50}$/.test(line) &&
+                    !/ESPAÑA|ESPAGNE|REINO|UNION|DOCUMENTO|NATIONAL|IDENTIDAD|VALIDA|IDESP|SEXO|SOPORTE/.test(line)) {
+                    const parts = line.trim().split(/\s+/);
+                    if (parts.length >= 2 && parts.length <= 6) {
+                        info.Nombre    = parts[parts.length - 1];
+                        info.Apellidos = parts.slice(0, parts.length - 1).join(' ');
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Dirección (típicamente en el reverso del DNI)
+        if (!info.Direccion) {
+            const addrMatch = text.match(/(?:DOMICILIO|DIRECCIÓN|DIRECCION|C\/|CL |AV\.|CALLE|AVDA)[:\s]+(.{5,60})/i);
+            if (addrMatch) info.Direccion = addrMatch[1].trim();
+        }
+        if (!info.Localidad) {
+            const locMatch = text.match(/(?:MUNICIPIO|LOCALIDAD|LOCALITAT|POBLACION|CIUDAD)[:\s]+([A-ZÁÉÍÓÚÑ ]{3,40})/i);
+            if (locMatch) info.Localidad = locMatch[1].trim();
+        }
+
         extractedInfo = info;
-        showConfirmationUI();
+        showConfirmationUI(true);
     }
 
-    function showConfirmationUI() {
-        const container = document.getElementById('ocrFields');
+    // ─── PARSER MRZ ──────────────────────────────────────────────────────────────
+    function parseMRZ(mrzLines, info) {
+        // MRZ del DNI español: 3 líneas de 30 chars
+        // Línea 1: IDESA<NumDoc<<<<< check <Soporte<check<<<<<<<
+        // Línea 2: AAMMDD<check<Sexo<AAEXPI<check<Nacion<<<<<<<<<<check
+        // Línea 3: Apellidos<<Nombre
+        try {
+            const l = mrzLines.map(x => x.replace(/\s/g, '').replace(/O/g, '0').replace(/o/g, '0'));
+            // Línea 3: Nombre
+            if (l[2] && l[2].length >= 15) {
+                const nameParts = l[2].split('<<').filter(p => p.length > 0);
+                if (nameParts.length >= 1) info.Apellidos = nameParts[0].replace(/</g, ' ').trim();
+                if (nameParts.length >= 2) info.Nombre    = nameParts[1].replace(/</g, ' ').trim();
+            }
+            // Línea 1: NumDoc (posiciones 5-14) y Soporte (posiciones 15-29)
+            if (l[0] && l[0].length >= 29) {
+                info.NumDoc  = l[0].substring(5, 14).replace(/</g, '').trim();
+                info.Soporte = l[0].substring(15, 28).replace(/</g, '').trim();
+            }
+            // Línea 2: Fecha nacimiento (0-5), Sexo (7), Exp (8-13), Nación (15-17)
+            if (l[1] && l[1].length >= 18) {
+                const born = l[1].substring(0, 6);
+                const exp  = l[1].substring(8, 14);
+                const sex  = l[1][7];
+                const nat  = l[1].substring(15, 18).replace(/</g, '');
+
+                if (/^\d{6}$/.test(born)) {
+                    let yr = parseInt(born.substring(0, 2));
+                    yr += yr < 30 ? 2000 : 1900;
+                    info.Nacimiento = `${yr}-${born.substring(2, 4)}-${born.substring(4, 6)}`;
+                }
+                if (/^\d{6}$/.test(exp)) {
+                    let yr = parseInt(exp.substring(0, 2));
+                    yr += 2000; // Expedición siempre en siglo XXI
+                    info.Expedicion = `${yr}-${exp.substring(2, 4)}-${exp.substring(4, 6)}`;
+                }
+                if (sex === 'M') info.Sexo = 'M';
+                else if (sex === 'F') info.Sexo = 'F';
+                if (nat) {
+                    const natMap = { ESP: 'ESPAÑOLA', FRA: 'FRANCESA', DEU: 'ALEMANA', GBR: 'BRITÁNICA', ITA: 'ITALIANA', PRT: 'PORTUGUESA', USA: 'AMERICANA', ARG: 'ARGENTINA', MEX: 'MEXICANA', COL: 'COLOMBIANA', VEN: 'VENEZOLANA', MAR: 'MARROQUÍ', CHN: 'CHINA', ROU: 'RUMANA', UKR: 'UCRANIANA' };
+                    info.Nacionalidad = natMap[nat] || nat;
+                }
+            }
+        } catch (e) { console.warn('MRZ parse error:', e); }
+    }
+
+    // ─── UI DE CONFIRMACIÓN MEJORADA ─────────────────────────────────────────────
+    function showConfirmationUI(ocrRan = true) {
+        const criticalOk = extractedInfo.NumDoc && extractedInfo.Nombre && extractedInfo.Nacimiento;
+        const partial     = extractedInfo.NumDoc || extractedInfo.Nombre;
+        const ocrBox      = document.getElementById('ocrConfirmation');
+        const container   = document.getElementById('ocrFields');
         container.innerHTML = '';
-        const fields = [
-            { label: 'Documento', value: extractedInfo.NumDoc || '?', key: 'NumDoc' },
-            { label: 'Nombre', value: extractedInfo.Nombre || '?', key: 'Nombre' },
-            { label: 'F. Nacimiento', value: extractedInfo.Nacimiento || '?', key: 'Nacimiento' },
-            { label: 'F. Expedición', value: extractedInfo.Expedicion || '?', key: 'Expedicion' }
+
+        // ── Cabecera: éxito, parcial o fallo ──────────────────────────────────
+        const header = ocrBox.querySelector('div.bg-green-50, div.bg-yellow-50, div.bg-red-50');
+        if (header) header.remove(); // limpiar cabecera anterior
+
+        let headerHTML = '';
+        if (criticalOk) {
+            headerHTML = `<div class="bg-green-50 border-2 border-green-200 p-4 rounded-xl mb-4">
+                <h4 class="text-green-800 font-bold flex items-center mb-1"><span class="mr-2 text-xl">✅</span> Datos leídos correctamente</h4>
+                <p class="text-sm text-green-700">Verifique la información y corrija lo que no sea correcto.</p></div>`;
+        } else if (partial) {
+            headerHTML = `<div class="bg-yellow-50 border-2 border-yellow-300 p-4 rounded-xl mb-4">
+                <h4 class="text-yellow-800 font-bold flex items-center mb-1"><span class="mr-2 text-xl">⚠️</span> Lectura parcial</h4>
+                <p class="text-sm text-yellow-700">No hemos podido leer todos los datos con claridad. Por favor, <strong>revisa y completa los campos</strong> a continuación o repite la foto.</p></div>`;
+        } else {
+            headerHTML = `<div class="bg-red-50 border-2 border-red-300 p-4 rounded-xl mb-4">
+                <h4 class="text-red-800 font-bold flex items-center mb-1"><span class="mr-2 text-xl">❌</span> No pudimos leer el documento</h4>
+                <p class="text-sm text-red-700">No hemos podido leer todos los datos con claridad. Por favor, <strong>revisa y completa los campos abajo</strong> o repite la foto con mejor iluminación.</p></div>`;
+        }
+        ocrBox.querySelector('.bg-green-50, .bg-yellow-50, .bg-red-50, div:first-child')?.remove();
+        ocrBox.insertAdjacentHTML('afterbegin', headerHTML);
+
+        // ── Campos editables ───────────────────────────────────────────────────
+        const fieldDefs = [
+            { label: 'Tipo de Documento',    val: extractedInfo.TipoDoc,      key: 'TipoDoc',      type: 'text',    critical: false },
+            { label: 'Número de Documento',  val: extractedInfo.NumDoc,        key: 'NumDoc',       type: 'text',    critical: true  },
+            { label: 'Nº de Soporte (IDESP)',val: extractedInfo.Soporte,       key: 'Soporte',      type: 'text',    critical: true  },
+            { label: 'Apellidos',            val: extractedInfo.Apellidos,     key: 'Apellidos',    type: 'text',    critical: true  },
+            { label: 'Nombre',               val: extractedInfo.Nombre,        key: 'Nombre',       type: 'text',    critical: true  },
+            { label: 'Sexo (M/F)',           val: extractedInfo.Sexo,          key: 'Sexo',         type: 'text',    critical: false },
+            { label: 'Fecha de Nacimiento',  val: extractedInfo.Nacimiento,    key: 'Nacimiento',   type: 'date',    critical: true  },
+            { label: 'Fecha de Expedición',  val: extractedInfo.Expedicion,    key: 'Expedicion',   type: 'date',    critical: false },
+            { label: 'Nacionalidad',         val: extractedInfo.Nacionalidad,  key: 'Nacionalidad', type: 'text',    critical: false },
+            { label: 'Dirección',            val: extractedInfo.Direccion,     key: 'Direccion',    type: 'text',    critical: false },
+            { label: 'Localidad',            val: extractedInfo.Localidad,     key: 'Localidad',    type: 'text',    critical: false },
+            { label: 'País',                 val: extractedInfo.Pais,          key: 'Pais',         type: 'text',    critical: false },
         ];
-        fields.forEach(f => {
+
+        fieldDefs.forEach(f => {
+            const missing  = !f.val || f.val === '?';
+            const borderCls = missing && f.critical ? 'border-red-400 bg-red-50' : 'border-slate-200 bg-white';
             const div = document.createElement('div');
-            div.className = "flex justify-between border-b border-slate-200 py-2";
-            div.innerHTML = `<span class="text-slate-500 font-medium">${f.label}:</span> <span class="font-bold text-slate-800">${f.value}</span>`;
+            div.className = 'space-y-1';
+            div.innerHTML = `
+                <label class="text-xs font-bold text-slate-500 uppercase tracking-wide flex items-center gap-1">
+                    ${f.label}${f.critical ? ' <span class="text-red-500">*</span>' : ''}
+                </label>
+                <input type="${f.type}" class="ocr-editable w-full border-2 rounded-lg px-3 py-2 text-sm font-semibold ${borderCls} focus:outline-none focus:border-blue-400"
+                    data-key="${f.key}" value="${f.val || ''}" placeholder="${missing ? '— No detectado —' : ''}" />`;
             container.appendChild(div);
         });
-        document.getElementById('ocrConfirmation').classList.remove('hidden');
+
+        ocrBox.classList.remove('hidden');
     }
 
     function confirmOCRData() {
-        if (extractedInfo.NumDoc) document.getElementById('field_NumDoc_1').value = extractedInfo.NumDoc;
-        if (extractedInfo.Nacimiento) document.getElementById('field_Nacimiento_1').value = extractedInfo.Nacimiento;
-        if (extractedInfo.Expedicion) document.getElementById('field_Expedicion_1').value = extractedInfo.Expedicion;
+        // Recoger valores editados por el usuario
+        document.querySelectorAll('.ocr-editable').forEach(input => {
+            extractedInfo[input.dataset.key] = input.value.trim();
+        });
+
+        // Volcar en campos del formulario
+        const map = {
+            NumDoc:      'field_NumDoc_1',
+            Soporte:     'field_Soporte_1',
+            Nacimiento:  'field_Nacimiento_1',
+            Expedicion:  'field_Expedicion_1',
+            Nacionalidad:'field_Nacionalidad_1',
+            Direccion:   'field_Direccion_1',
+            Localidad:   'field_Ciudad_1', // campo Ciudad del formulario
+        };
+        // Nombre + Apellidos → campo Nombre_1
+        const nombreCompleto = [extractedInfo.Apellidos, extractedInfo.Nombre].filter(Boolean).join(' ');
+        if (nombreCompleto) {
+            const nField = document.getElementById('field_Nombre_1');
+            if (nField) nField.value = nombreCompleto;
+        }
+        Object.entries(map).forEach(([key, fieldId]) => {
+            const el = document.getElementById(fieldId);
+            if (el && extractedInfo[key]) el.value = extractedInfo[key];
+        });
+
         document.getElementById('ocrConfirmation').classList.add('hidden');
         showPreviews();
     }
