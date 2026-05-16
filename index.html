@@ -252,7 +252,7 @@
     // ─── ANÁLISIS EN TIEMPO REAL DEL ENCUADRE (ESTRICTO) ─────────────────────────
     let frameAnalysisTimer = null;
     let goodFrameStreak    = 0;
-    const GOOD_STREAK_NEEDED = 3; // 3 ciclos × 400ms = 1.2s estables requeridos
+    const GOOD_STREAK_NEEDED = 4; // 4 ciclos × 400ms = 1.6s estables requeridos para asegurar nitidez
 
     function startFrameAnalysis() {
         stopFrameAnalysis();
@@ -607,6 +607,7 @@
     }
 
     // ─── UI DE CONFIRMACIÓN MEJORADA ─────────────────────────────────────────────
+    // ─── UI DE CONFIRMACIÓN FINAL (MINIMALISTA) ──────────────────────────────────
     function showConfirmationUI() {
         const ocrBox      = document.getElementById('ocrConfirmation');
         const container   = document.getElementById('ocrFields');
@@ -614,38 +615,54 @@
         container.innerHTML = '';
 
         statusHeader.innerHTML = `<div class="bg-blue-50 border-2 border-blue-200 p-4 rounded-xl mb-4">
-            <h4 class="text-blue-800 font-bold flex items-center mb-1"><span class="mr-2 text-xl">📸</span> Captura realizada</h4>
-            <p class="text-sm text-blue-700">Utilice las fotos de arriba como referencia para completar los datos del viajero.</p></div>`;
+            <h4 class="text-blue-800 font-bold flex items-center mb-1"><span class="mr-2 text-xl">📸</span> Documento capturado</h4>
+            <p class="text-sm text-blue-700 font-medium text-center">Complete sus datos de contacto para finalizar el registro.</p></div>`;
 
-        // ── Campos editables ───────────────────────────────────────────────────
+        // ── Campos de contacto ──────────────────────────────────────────
         const fieldDefs = [
-            { label: 'Tipo de Documento',    val: extractedInfo.TipoDoc,      key: 'TipoDoc',      type: 'text',    critical: false },
-            { label: 'Número de Documento',  val: extractedInfo.NumDoc,        key: 'NumDoc',       type: 'text',    critical: true  },
-            { label: 'Nº de Soporte (IDESP)',val: extractedInfo.Soporte,       key: 'Soporte',      type: 'text',    critical: true  },
-            { label: 'Apellidos',            val: extractedInfo.Apellidos,     key: 'Apellidos',    type: 'text',    critical: true  },
-            { label: 'Nombre',               val: extractedInfo.Nombre,        key: 'Nombre',       type: 'text',    critical: true  },
-            { label: 'Sexo (M/F)',           val: extractedInfo.Sexo,          key: 'Sexo',         type: 'text',    critical: false },
-            { label: 'Fecha de Nacimiento',  val: extractedInfo.Nacimiento,    key: 'Nacimiento',   type: 'date',    critical: true  },
-            { label: 'Fecha de Expedición',  val: extractedInfo.Expedicion,    key: 'Expedicion',   type: 'date',    critical: false },
-            { label: 'Nacionalidad',         val: extractedInfo.Nacionalidad,  key: 'Nacionalidad', type: 'text',    critical: false },
-            { label: 'Dirección',            val: extractedInfo.Direccion,     key: 'Direccion',    type: 'text',    critical: false },
-            { label: 'Localidad',            val: extractedInfo.Localidad,     key: 'Localidad',    type: 'text',    critical: false },
-            { label: 'País',                 val: extractedInfo.Pais,          key: 'Pais',         type: 'text',    critical: false },
+            { label: 'Teléfono de contacto', key: 'Telefono', type: 'tel', placeholder: '+34 600 000 000', icon: '📞' },
+            { label: 'Correo electrónico',  key: 'Email',    type: 'email', placeholder: 'usuario@correo.com', icon: '✉️' },
         ];
 
         fieldDefs.forEach(f => {
-            const missing  = !f.val || f.val === '?';
-            const borderCls = missing && f.critical ? 'border-red-400 bg-red-50' : 'border-slate-200 bg-white';
             const div = document.createElement('div');
-            div.className = 'space-y-1';
+            div.className = 'space-y-1 mb-4';
             div.innerHTML = `
-                <label class="text-xs font-bold text-slate-500 uppercase tracking-wide flex items-center gap-1">
-                    ${f.label}${f.critical ? ' <span class="text-red-500">*</span>' : ''}
+                <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-1">
+                    ${f.icon} ${f.label}
                 </label>
-                <input type="${f.type}" class="ocr-editable w-full border-2 rounded-lg px-3 py-2 text-sm font-semibold ${borderCls} focus:outline-none focus:border-blue-400"
-                    data-key="${f.key}" value="${f.val || ''}" placeholder="${missing ? '— No detectado —' : ''}" />`;
+                <input type="${f.type}" id="field_${f.key}" placeholder="${f.placeholder}" required
+                       class="w-full border-2 border-slate-200 rounded-xl px-4 py-3 text-sm font-bold focus:outline-none focus:border-blue-500 transition-all bg-white shadow-sm">
+            `;
             container.appendChild(div);
         });
+
+        // ── Banner "Añadir Menor" (Activo) ───────────────────────────────
+        const minorBanner = document.createElement('div');
+        minorBanner.className = 'my-6 p-5 bg-gradient-to-br from-indigo-600 to-blue-700 rounded-2xl shadow-xl transform transition hover:scale-[1.02] active:scale-95 cursor-pointer flex items-center justify-between text-white group';
+        minorBanner.innerHTML = `
+            <div class="flex items-center gap-4">
+                <div class="bg-white/20 p-2 rounded-lg backdrop-blur-md group-hover:rotate-12 transition-transform">👶</div>
+                <div>
+                    <p class="font-extrabold text-sm uppercase tracking-tight">¿Viaja con menores?</p>
+                    <p class="text-[11px] opacity-80 font-medium">Añadir acompañante menor de 14 años</p>
+                </div>
+            </div>
+            <div class="bg-white/20 h-10 w-10 rounded-full flex items-center justify-center font-bold text-xl">＋</div>
+        `;
+        minorBanner.onclick = () => { addMinor(); window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }); };
+        container.appendChild(minorBanner);
+
+        // ── Checkbox Política de Privacidad ────────────────────────────────
+        const privacyDiv = document.createElement('div');
+        privacyDiv.className = 'flex items-start gap-4 p-4 bg-slate-50 rounded-2xl border border-slate-100 mb-6';
+        privacyDiv.innerHTML = `
+            <input type="checkbox" id="privacy_check" required class="mt-1 w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 transition-all cursor-pointer">
+            <label for="privacy_check" class="text-[11px] text-slate-600 font-medium leading-relaxed cursor-pointer">
+                Acepto la <a href="politica.html" target="_blank" class="text-blue-600 font-bold underline">Política de Privacidad</a> y consiento el tratamiento de mis datos para el registro legal de viajeros.
+            </label>
+        `;
+        container.appendChild(privacyDiv);
 
         ocrBox.classList.remove('hidden');
     }
