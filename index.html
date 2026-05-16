@@ -251,14 +251,13 @@
         }
     }
 
-    // ─── ANÁLISIS EN TIEMPO REAL DEL ENCUADRE ────────────────────────────────────
+    // ─── ANÁLISIS EN TIEMPO REAL DEL ENCUADRE (ESTRICTO) ─────────────────────────
     let frameAnalysisTimer = null;
     let goodFrameStreak    = 0;
-    const GOOD_STREAK_NEEDED = 2; // 2 ciclos × 400ms = 800ms con buen encuadre
+    const GOOD_STREAK_NEEDED = 3; // 3 ciclos × 400ms = 1.2s estables requeridos
 
     function startFrameAnalysis() {
         stopFrameAnalysis();
-        // Deshabilitar botón captura al inicio
         const btn = document.getElementById('captureBtn');
         if (btn) { btn.disabled = true; btn.style.opacity = '0.45'; }
         frameAnalysisTimer = setInterval(analyzeFrame, 400);
@@ -269,75 +268,122 @@
         goodFrameStreak = 0;
     }
 
+    function getLum(pixels, W, x, y) {
+        const i = (y * W + x) * 4;
+        return 0.299 * pixels[i] + 0.587 * pixels[i+1] + 0.114 * pixels[i+2];
+    }
+
     function analyzeFrame() {
         const video = document.getElementById('video');
         if (!video || video.paused || video.ended || video.videoWidth === 0) return;
-        const W = 150, H = 100;
+
+        const W = 180, H = 120;
         const c = document.createElement('canvas');
         c.width = W; c.height = H;
         const ctx = c.getContext('2d');
         ctx.drawImage(video, 0, 0, W, H);
         const pixels = ctx.getImageData(0, 0, W, H).data;
+
+        // Zona guía = 80% central (inset 10%)
         const gx1 = Math.floor(W * 0.10), gx2 = Math.floor(W * 0.90);
         const gy1 = Math.floor(H * 0.10), gy2 = Math.floor(H * 0.90);
-        let sumInner = 0, countInner = 0, sumOuter = 0, countOuter = 0;
+        const gxM = Math.floor((gx1 + gx2) / 2);
+        const gyM = Math.floor((gy1 + gy2) / 2);
+
+        // ── CUADRANTES: el documento debe llenar los 4 ──────────────────────────
+        // Q1=sup-izq, Q2=sup-der, Q3=inf-izq, Q4=inf-der
+        const quads = [
+            { x1: gx1, y1: gy1, x2: gxM, y2: gyM },  // Q1
+            { x1: gxM, y1: gy1, x2: gx2, y2: gyM },  // Q2
+            { x1: gx1, y1: gyM, x2: gxM, y2: gy2 },  // Q3
+            { x1: gxM, y1: gyM, x2: gx2, y2: gy2 },  // Q4
+        ];
+
+        const qAvg = quads.map(q => {
+            let s = 0, n = 0;
+            for (let y = q.y1; y < q.y2; y++)
+                for (let x = q.x1; x < q.x2; x++) { s += getLum(pixels, W, x, y); n++; }
+            return n > 0 ? s / n : 0;
+        });
+
+        // VETO DURO: si cualquier cuadrante está muy oscuro → el documento no lo cubre
+        const MIN_QUAD_LUM = 75; // luminosidad mínima aceptable en cada cuadrante
+        const darkQuads    = qAvg.filter(v => v < MIN_QUAD_LUM).length;
+        // Diferencia máxima entre cuadrantes: si es muy alta, el doc no llena el marco
+        const qMax = Math.max(...qAvg), qMin = Math.min(...qAvg);
+        const qSpread = qMax - qMin;
+
+        // ── MÉTRICAS GLOBALES ────────────────────────────────────────────────────
+        let sumInner = 0, cntInner = 0, sumOuter = 0, cntOuter = 0;
         for (let y = 0; y < H; y++) {
             for (let x = 0; x < W; x++) {
-                const i = (y * W + x) * 4;
-                const lum = 0.299 * pixels[i] + 0.587 * pixels[i+1] + 0.114 * pixels[i+2];
+                const lum = getLum(pixels, W, x, y);
                 const inside = x >= gx1 && x <= gx2 && y >= gy1 && y <= gy2;
-                if (inside) { sumInner += lum; countInner++; }
-                else { sumOuter += lum; countOuter++; }
+                if (inside) { sumInner += lum; cntInner++; }
+                else        { sumOuter += lum; cntOuter++; }
             }
         }
-        const avgInner = sumInner / countInner;
-        const avgOuter = countOuter > 0 ? sumOuter / countOuter : 0;
+        const avgInner = sumInner / cntInner;
+        const avgOuter = cntOuter > 0 ? sumOuter / cntOuter : 0;
+
         let variance = 0;
-        for (let y = gy1; y <= gy2; y++) {
+        for (let y = gy1; y <= gy2; y++)
             for (let x = gx1; x <= gx2; x++) {
-                const i = (y * W + x) * 4;
-                const lum = 0.299 * pixels[i] + 0.587 * pixels[i+1] + 0.114 * pixels[i+2];
-                variance += (lum - avgInner) ** 2;
+                const d = getLum(pixels, W, x, y) - avgInner;
+                variance += d * d;
             }
-        }
-        const stdDev = Math.sqrt(variance / countInner);
+        const stdDev = Math.sqrt(variance / cntInner);
         const borderContrast = Math.abs(avgInner - avgOuter);
-        // Puntuación 0-100
+
+        // ── PUNTUACIÓN BASE (0-85) ───────────────────────────────────────────────
         let score = 0;
-        if (avgInner > 90)                               score += 30;
-        else if (avgInner > 60)                          score += 15;
-        if (borderContrast > 20)                         score += 25;
-        else if (borderContrast > 10)                    score += 12;
-        if (stdDev > 12 && stdDev < 80)                  score += 30;
-        else if (stdDev > 6)                             score += 15;
-        if (avgInner > 130 && stdDev > 8 && stdDev < 65) score += 15;
-        updateFrameFeedback(score);
+        if (avgInner > 100)                              score += 25;
+        else if (avgInner > 70)                          score += 12;
+        if (borderContrast > 25)                         score += 20;
+        else if (borderContrast > 12)                    score += 10;
+        if (stdDev > 10 && stdDev < 75)                  score += 25;
+        else if (stdDev > 5)                             score += 10;
+        if (avgInner > 120 && stdDev > 8 && stdDev < 60) score += 15;
+
+        // ── PENALIZACIONES ESTRICTAS (cobertura) ────────────────────────────────
+        if (darkQuads >= 1) score -= 35; // cuadrante oscuro → no cubre el marco
+        if (darkQuads >= 2) score -= 35; // dos cuadrantes oscuros → fallo grave
+        if (qSpread > 60)   score -= 20; // distribución muy desigual → solo una esquina
+
+        score = Math.max(0, Math.min(100, score));
+
+        // MENSAJE específico según el problema detectado
+        let hint = null;
+        if (darkQuads >= 1)  hint = '↔️ Acerca el documento y céntralo en el marco';
+        else if (qSpread > 40) hint = '↔️ El documento no cubre todo el marco';
+
+        updateFrameFeedback(score, hint);
     }
 
-    function updateFrameFeedback(score) {
+    function updateFrameFeedback(score, customHint = null) {
         const scanLineEl = document.getElementById('scanLine');
         const hintEl     = document.getElementById('framingHint');
         const captureBtn = document.getElementById('captureBtn');
-        // Seleccionar los 4 divs de esquinas (hijos del div marco)
-        const corners = document.querySelectorAll('#cameraContainer > div:nth-child(2) > div');
-        if (score >= 70) {
+        const corners    = document.querySelectorAll('#cameraContainer > div:nth-child(2) > div');
+
+        if (score >= 85) {
             goodFrameStreak++;
             if (goodFrameStreak >= GOOD_STREAK_NEEDED) {
                 if (scanLineEl) { scanLineEl.style.background = 'linear-gradient(90deg,transparent,rgba(34,197,94,0.95),transparent)'; scanLineEl.style.boxShadow = '0 0 14px rgba(34,197,94,0.9)'; }
-                if (hintEl)    { hintEl.textContent = '✅ Documento detectado — pulsa Capturar'; hintEl.style.background = 'rgba(21,128,61,0.85)'; }
-                corners.forEach(d => { if(d.style.borderTop || d.style.borderBottom) d.style.borderColor = '#22c55e'; });
-                if (captureBtn) { captureBtn.disabled = false; captureBtn.style.opacity = '1'; }
+                if (hintEl)    { hintEl.textContent = '✅ Encuadre perfecto — pulsa Capturar'; hintEl.style.background = 'rgba(21,128,61,0.85)'; }
+                corners.forEach(d => { d.style.borderTopColor = '#22c55e'; d.style.borderBottomColor = '#22c55e'; d.style.borderLeftColor = '#22c55e'; d.style.borderRightColor = '#22c55e'; });
+                if (captureBtn) { captureBtn.disabled = false; captureBtn.style.opacity = '1'; captureBtn.style.background = '#16a34a'; }
             }
-        } else if (score >= 40) {
+        } else if (score >= 50) {
             goodFrameStreak = 0;
             if (scanLineEl) { scanLineEl.style.background = 'linear-gradient(90deg,transparent,rgba(251,191,36,0.95),transparent)'; scanLineEl.style.boxShadow = '0 0 12px rgba(251,191,36,0.8)'; }
-            if (hintEl)    { hintEl.textContent = '⚠️ Ajusta el documento para centrarlo'; hintEl.style.background = 'rgba(120,80,0,0.8)'; }
-            corners.forEach(d => { if(d.style.borderTop || d.style.borderBottom) d.style.borderColor = '#f59e0b'; });
-            if (captureBtn) { captureBtn.disabled = true; captureBtn.style.opacity = '0.5'; }
+            if (hintEl)    { hintEl.textContent = customHint || '⚠️ Ajusta el documento para centrarlo'; hintEl.style.background = 'rgba(120,80,0,0.8)'; }
+            corners.forEach(d => { d.style.borderTopColor = '#f59e0b'; d.style.borderBottomColor = '#f59e0b'; d.style.borderLeftColor = '#f59e0b'; d.style.borderRightColor = '#f59e0b'; });
+            if (captureBtn) { captureBtn.disabled = true; captureBtn.style.opacity = '0.5'; captureBtn.style.background = '#2563eb'; }
         } else {
             goodFrameStreak = 0;
             if (scanLineEl) { scanLineEl.style.background = 'linear-gradient(90deg,transparent,rgba(239,68,68,0.9),transparent)'; scanLineEl.style.boxShadow = '0 0 10px rgba(239,68,68,0.7)'; }
-            if (hintEl)    { hintEl.textContent = '📄 Coloca el documento dentro del marco'; hintEl.style.background = 'rgba(0,0,0,0.65)'; }
+            if (hintEl)    { hintEl.textContent = customHint || '📄 Coloca el documento dentro del marco'; hintEl.style.background = 'rgba(0,0,0,0.65)'; }
             corners.forEach(d => { if(d.style.borderTop || d.style.borderBottom) d.style.borderColor = '#ef4444'; });
             if (captureBtn) { captureBtn.disabled = true; captureBtn.style.opacity = '0.5'; }
         }
