@@ -290,30 +290,7 @@
         const gxM = Math.floor((gx1 + gx2) / 2);
         const gyM = Math.floor((gy1 + gy2) / 2);
 
-        // ── CUADRANTES: el documento debe llenar los 4 ──────────────────────────
-        // Q1=sup-izq, Q2=sup-der, Q3=inf-izq, Q4=inf-der
-        const quads = [
-            { x1: gx1, y1: gy1, x2: gxM, y2: gyM },  // Q1
-            { x1: gxM, y1: gy1, x2: gx2, y2: gyM },  // Q2
-            { x1: gx1, y1: gyM, x2: gxM, y2: gy2 },  // Q3
-            { x1: gxM, y1: gyM, x2: gx2, y2: gy2 },  // Q4
-        ];
-
-        const qAvg = quads.map(q => {
-            let s = 0, n = 0;
-            for (let y = q.y1; y < q.y2; y++)
-                for (let x = q.x1; x < q.x2; x++) { s += getLum(pixels, W, x, y); n++; }
-            return n > 0 ? s / n : 0;
-        });
-
-        // VETO DURO: si cualquier cuadrante está muy oscuro → el documento no lo cubre
-        const MIN_QUAD_LUM = 75; // luminosidad mínima aceptable en cada cuadrante
-        const darkQuads    = qAvg.filter(v => v < MIN_QUAD_LUM).length;
-        // Diferencia máxima entre cuadrantes: si es muy alta, el doc no llena el marco
-        const qMax = Math.max(...qAvg), qMin = Math.min(...qAvg);
-        const qSpread = qMax - qMin;
-
-        // ── MÉTRICAS GLOBALES ────────────────────────────────────────────────────
+        // ── MÉTRICAS GLOBALES ─────────────────────────────────────────────────
         let sumInner = 0, cntInner = 0, sumOuter = 0, cntOuter = 0;
         for (let y = 0; y < H; y++) {
             for (let x = 0; x < W; x++) {
@@ -324,8 +301,9 @@
             }
         }
         const avgInner = sumInner / cntInner;
-        const avgOuter = cntOuter > 0 ? sumOuter / cntOuter : 0;
+        const avgOuter = cntOuter > 0 ? sumOuter / cntOuter : avgInner;
 
+        // Desviación estándar dentro del marco (texto/foto generan stdDev moderada)
         let variance = 0;
         for (let y = gy1; y <= gy2; y++)
             for (let x = gx1; x <= gx2; x++) {
@@ -333,29 +311,61 @@
                 variance += d * d;
             }
         const stdDev = Math.sqrt(variance / cntInner);
-        const borderContrast = Math.abs(avgInner - avgOuter);
 
-        // ── PUNTUACIÓN BASE (0-85) ───────────────────────────────────────────────
+        // ── CUADRANTES: verificar cobertura relativa ──────────────────────────
+        const quads = [
+            { x1: gx1, y1: gy1, x2: gxM, y2: gyM },
+            { x1: gxM, y1: gy1, x2: gx2, y2: gyM },
+            { x1: gx1, y1: gyM, x2: gxM, y2: gy2 },
+            { x1: gxM, y1: gyM, x2: gx2, y2: gy2 },
+        ];
+        const qAvg = quads.map(q => {
+            let s = 0, n = 0;
+            for (let y = q.y1; y < q.y2; y++)
+                for (let x = q.x1; x < q.x2; x++) { s += getLum(pixels, W, x, y); n++; }
+            return n > 0 ? s / n : 0;
+        });
+
+        // Un cuadrante está "sin cubrir" si es mucho más oscuro que el promedio interior
+        // Umbral relativo: más de 30 puntos por debajo del avgInner → descubierto
+        const RELATIVE_DARK = 30;
+        const uncoveredQuads = qAvg.filter(v => v < avgInner - RELATIVE_DARK).length;
+        // Dispersión entre cuadrantes: si es alta, el doc solo cubre una parte
+        const qMax = Math.max(...qAvg), qMin = Math.min(...qAvg);
+        const qSpread = qMax - qMin;
+
+        // ── PUNTUACIÓN (0–100) ────────────────────────────────────────────────
         let score = 0;
-        if (avgInner > 100)                              score += 25;
-        else if (avgInner > 70)                          score += 12;
-        if (borderContrast > 25)                         score += 20;
-        else if (borderContrast > 12)                    score += 10;
-        if (stdDev > 10 && stdDev < 75)                  score += 25;
-        else if (stdDev > 5)                             score += 10;
-        if (avgInner > 120 && stdDev > 8 && stdDev < 60) score += 15;
 
-        // ── PENALIZACIONES ESTRICTAS (cobertura) ────────────────────────────────
-        if (darkQuads >= 1) score -= 35; // cuadrante oscuro → no cubre el marco
-        if (darkQuads >= 2) score -= 35; // dos cuadrantes oscuros → fallo grave
-        if (qSpread > 60)   score -= 20; // distribución muy desigual → solo una esquina
+        // 1. Hay algo en el marco (luminosidad relativa, independiente de luz ambiental)
+        //    El interior debe ser al menos tan brillante como el exterior
+        if (avgInner > avgOuter + 10) score += 20;       // doc más claro que fondo
+        else if (avgInner > avgOuter - 10) score += 10;  // similar al fondo, posible
+
+        // 2. Contenido real dentro del marco (texto, foto del DNI)
+        if (stdDev > 8 && stdDev < 80)   score += 30;   // buena varianza → hay contenido
+        else if (stdDev > 4)              score += 15;
+
+        // 3. Luminosidad general razonable (no completamente negro ni overexposed)
+        if (avgInner > 40 && avgInner < 230) score += 20;
+        else if (avgInner > 20)              score += 8;
+
+        // 4. Uniformidad entre cuadrantes (doc llena todo el marco)
+        if (qSpread < 30)       score += 20;  // muy uniforme → bien centrado
+        else if (qSpread < 55)  score += 10;  // aceptable
+        else if (qSpread > 80)  score -= 15;  // muy desigual → solo una esquina
+
+        // 5. Penalización si cuadrantes sin cubrir
+        score -= uncoveredQuads * 20;  // -20 por cada cuadrante descubierto
 
         score = Math.max(0, Math.min(100, score));
 
-        // MENSAJE específico según el problema detectado
+        // Mensaje contextual
         let hint = null;
-        if (darkQuads >= 1)  hint = '↔️ Acerca el documento y céntralo en el marco';
-        else if (qSpread > 40) hint = '↔️ El documento no cubre todo el marco';
+        if (uncoveredQuads >= 2)  hint = '↔️ Acerca y centra el documento en el marco';
+        else if (uncoveredQuads === 1) hint = '↔️ El documento no cubre todo el marco';
+        else if (qSpread > 55)    hint = '↔️ Centra el documento horizontalmente';
+        else if (stdDev < 5)      hint = '💡 Necesita más luz o mueve el documento';
 
         updateFrameFeedback(score, hint);
     }
@@ -366,28 +376,32 @@
         const captureBtn = document.getElementById('captureBtn');
         const corners    = document.querySelectorAll('#cameraContainer > div:nth-child(2) > div');
 
-        if (score >= 85) {
+        if (score >= 72) {
             goodFrameStreak++;
             if (goodFrameStreak >= GOOD_STREAK_NEEDED) {
+                // VERDE — encuadre correcto y estable
                 if (scanLineEl) { scanLineEl.style.background = 'linear-gradient(90deg,transparent,rgba(34,197,94,0.95),transparent)'; scanLineEl.style.boxShadow = '0 0 14px rgba(34,197,94,0.9)'; }
-                if (hintEl)    { hintEl.textContent = '✅ Encuadre perfecto — pulsa Capturar'; hintEl.style.background = 'rgba(21,128,61,0.85)'; }
+                if (hintEl)    { hintEl.textContent = '✅ Encuadre correcto — pulsa Capturar'; hintEl.style.background = 'rgba(21,128,61,0.85)'; }
                 corners.forEach(d => { d.style.borderTopColor = '#22c55e'; d.style.borderBottomColor = '#22c55e'; d.style.borderLeftColor = '#22c55e'; d.style.borderRightColor = '#22c55e'; });
                 if (captureBtn) { captureBtn.disabled = false; captureBtn.style.opacity = '1'; captureBtn.style.background = '#16a34a'; }
             }
-        } else if (score >= 50) {
+        } else if (score >= 42) {
             goodFrameStreak = 0;
+            // AMARILLO — parcialmente alineado
             if (scanLineEl) { scanLineEl.style.background = 'linear-gradient(90deg,transparent,rgba(251,191,36,0.95),transparent)'; scanLineEl.style.boxShadow = '0 0 12px rgba(251,191,36,0.8)'; }
             if (hintEl)    { hintEl.textContent = customHint || '⚠️ Ajusta el documento para centrarlo'; hintEl.style.background = 'rgba(120,80,0,0.8)'; }
             corners.forEach(d => { d.style.borderTopColor = '#f59e0b'; d.style.borderBottomColor = '#f59e0b'; d.style.borderLeftColor = '#f59e0b'; d.style.borderRightColor = '#f59e0b'; });
             if (captureBtn) { captureBtn.disabled = true; captureBtn.style.opacity = '0.5'; captureBtn.style.background = '#2563eb'; }
         } else {
             goodFrameStreak = 0;
+            // ROJO — no hay documento
             if (scanLineEl) { scanLineEl.style.background = 'linear-gradient(90deg,transparent,rgba(239,68,68,0.9),transparent)'; scanLineEl.style.boxShadow = '0 0 10px rgba(239,68,68,0.7)'; }
             if (hintEl)    { hintEl.textContent = customHint || '📄 Coloca el documento dentro del marco'; hintEl.style.background = 'rgba(0,0,0,0.65)'; }
-            corners.forEach(d => { if(d.style.borderTop || d.style.borderBottom) d.style.borderColor = '#ef4444'; });
-            if (captureBtn) { captureBtn.disabled = true; captureBtn.style.opacity = '0.5'; }
+            corners.forEach(d => { d.style.borderTopColor = '#ef4444'; d.style.borderBottomColor = '#ef4444'; d.style.borderLeftColor = '#ef4444'; d.style.borderRightColor = '#ef4444'; });
+            if (captureBtn) { captureBtn.disabled = true; captureBtn.style.opacity = '0.5'; captureBtn.style.background = '#2563eb'; }
         }
     }
+
 
     async function startCamera() {
         const video = document.getElementById('video');
