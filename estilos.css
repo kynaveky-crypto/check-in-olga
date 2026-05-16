@@ -34,6 +34,12 @@
   100% { top: 0; }
 }
 
+@keyframes scanAnim {
+  0%   { top: 0; }
+  50%  { top: calc(100% - 3px); }
+  100% { top: 0; }
+}
+
 .animate-scan {
   position: absolute;
   animation: scan 3s ease-in-out infinite;

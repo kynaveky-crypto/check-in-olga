@@ -91,36 +91,37 @@
                             <span id="scannerStepIndicator" class="bg-blue-100 text-blue-800 text-xs font-bold px-3 py-1 rounded-full">1 / 2</span>
                         </div>
                         
-                        <div id="cameraContainer" class="relative bg-black rounded-2xl overflow-hidden aspect-[4/3] shadow-inner border-4 border-slate-800">
-                            <video id="video" class="w-full h-full object-cover" playsinline></video>
+                        <div id="cameraContainer" class="relative bg-black rounded-2xl overflow-hidden shadow-inner border-4 border-slate-800" style="aspect-ratio:4/3">
+                            <video id="video" class="absolute inset-0 w-full h-full object-cover" playsinline autoplay muted></video>
                             
-                            <!-- Marco Activo -->
-                            <div class="absolute inset-0 flex items-center justify-center pointer-events-none p-4">
-                                <div id="activeFrame" class="relative w-full h-full border-2 border-white/30 rounded-xl transition-all duration-300">
-                                    <div class="absolute inset-0 border-2 border-dashed border-white/20 rounded-lg animate-pulse"></div>
-                                    <div class="absolute -top-1 -left-1 w-10 h-10 border-t-4 border-l-4 border-blue-500 rounded-tl-xl"></div>
-                                    <div class="absolute -top-1 -right-1 w-10 h-10 border-t-4 border-r-4 border-blue-500 rounded-tr-xl"></div>
-                                    <div class="absolute -bottom-1 -left-1 w-10 h-10 border-b-4 border-l-4 border-blue-500 rounded-bl-xl"></div>
-                                    <div class="absolute -bottom-1 -right-1 w-10 h-10 border-b-4 border-r-4 border-blue-500 rounded-br-xl"></div>
-                                    <div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-blue-400 to-transparent shadow-[0_0_15px_rgba(59,130,246,0.8)] animate-scan opacity-70"></div>
-                                </div>
+                            <!-- Vignette oscuro alrededor del marco guía -->
+                            <div class="absolute inset-0 pointer-events-none" style="
+                                background: radial-gradient(ellipse 70% 60% at 50% 50%, transparent 55%, rgba(0,0,0,0.65) 100%);
+                            "></div>
+
+                            <!-- Marco Activo con esquinas y línea de escaneo -->
+                            <div class="absolute pointer-events-none" style="inset: 10%; border: 2px solid rgba(255,255,255,0.15); border-radius: 12px;">
+                                <!-- Esquinas azules -->
+                                <div style="position:absolute;top:-3px;left:-3px;width:28px;height:28px;border-top:4px solid #3b82f6;border-left:4px solid #3b82f6;border-radius:6px 0 0 0;"></div>
+                                <div style="position:absolute;top:-3px;right:-3px;width:28px;height:28px;border-top:4px solid #3b82f6;border-right:4px solid #3b82f6;border-radius:0 6px 0 0;"></div>
+                                <div style="position:absolute;bottom:-3px;left:-3px;width:28px;height:28px;border-bottom:4px solid #3b82f6;border-left:4px solid #3b82f6;border-radius:0 0 0 6px;"></div>
+                                <div style="position:absolute;bottom:-3px;right:-3px;width:28px;height:28px;border-bottom:4px solid #3b82f6;border-right:4px solid #3b82f6;border-radius:0 0 6px 0;"></div>
+                                <!-- Línea de escaneo animada -->
+                                <div id="scanLine" style="position:absolute;left:0;right:0;height:3px;background:linear-gradient(90deg,transparent,rgba(59,130,246,0.9),transparent);box-shadow:0 0 12px rgba(59,130,246,0.8);animation:scanAnim 2.5s ease-in-out infinite;"></div>
+                            </div>
+
+                            <!-- Texto guía encima del video -->
+                            <div class="absolute bottom-3 left-0 right-0 flex justify-center pointer-events-none">
+                                <span id="framingHint" class="bg-black/60 text-white text-xs font-bold px-3 py-1 rounded-full backdrop-blur-sm">Coloca el documento dentro del marco</span>
                             </div>
 
                             <!-- Previsualización de Captura -->
-                            <div id="snapPreviewOverlay" class="absolute inset-0 bg-black hidden z-30 flex flex-col">
+                            <div id="snapPreviewOverlay" class="absolute inset-0 bg-black hidden z-30" style="display:none">
                                 <img id="snapPreviewImg" class="w-full h-full object-contain" />
-                                <div class="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/80 to-transparent flex gap-3">
-                                    <button type="button" onclick="retakeSnap()" class="flex-1 bg-red-500/80 hover:bg-red-600 text-white font-bold py-3 rounded-xl backdrop-blur-sm transition">🔄 Repetir</button>
-                                    <button type="button" onclick="confirmSnap()" class="flex-[2] bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-xl shadow-lg transition">✅ Usar esta foto</button>
+                                <div class="absolute bottom-0 left-0 right-0 p-4 flex gap-3" style="background:linear-gradient(to top,rgba(0,0,0,0.8),transparent)">
+                                    <button type="button" onclick="retakeSnap()" style="flex:1;background:rgba(239,68,68,0.8);color:white;font-weight:700;padding:12px;border-radius:12px;border:none;cursor:pointer;font-size:14px;">🔄 Repetir</button>
+                                    <button type="button" onclick="confirmSnap()" style="flex:2;background:#16a34a;color:white;font-weight:700;padding:12px;border-radius:12px;border:none;cursor:pointer;font-size:14px;">✅ Usar esta foto</button>
                                 </div>
-                            </div>
-
-                            <div id="scanningLoader" class="absolute inset-0 bg-slate-900/80 flex flex-col items-center justify-center hidden z-20">
-                                <div class="relative w-20 h-20 mb-4">
-                                    <div class="absolute inset-0 border-4 border-blue-500/20 rounded-full"></div>
-                                    <div class="absolute inset-0 border-4 border-blue-500 rounded-full border-t-transparent animate-spin"></div>
-                                </div>
-                                <p id="text_reading_ocr" class="text-white font-bold text-lg animate-pulse">Analizando documento...</p>
                             </div>
                         </div>
 
@@ -130,8 +131,20 @@
                         </div>
                     </div>
 
+                    <!-- Loader OCR: FUERA del scannerInterface para que sea visible al cerrar la cámara -->
+                    <div id="scanningLoader" class="hidden text-center py-10 animate-fade-in">
+                        <div class="flex flex-col items-center gap-4">
+                            <div class="relative w-20 h-20">
+                                <div class="absolute inset-0 border-4 border-blue-200 rounded-full"></div>
+                                <div class="absolute inset-0 border-4 border-blue-600 rounded-full border-t-transparent animate-spin"></div>
+                            </div>
+                            <p class="text-blue-800 font-bold text-lg animate-pulse">Analizando documento...</p>
+                            <p class="text-slate-500 text-sm">Esto puede tardar unos segundos</p>
+                        </div>
+                    </div>
+
                     <div id="ocrConfirmation" class="hidden space-y-4 animate-fade-in">
-                        <!-- El header (verde/amarillo/rojo) se inserta dinámicamente -->
+                        <div id="ocrStatusHeader"></div>
                         <div id="ocrFields" class="grid grid-cols-1 gap-3 text-sm"></div>
                         <div class="flex gap-3 pt-2">
                             <button type="button" onclick="restartScanner()" class="flex-1 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold py-3 rounded-xl transition">🔄 Repetir Escaneo</button>
@@ -265,18 +278,18 @@
         const previewImg = document.getElementById('snapPreviewImg');
         const previewOverlay = document.getElementById('snapPreviewOverlay');
         previewImg.src = dataUrl;
-        previewOverlay.classList.remove('hidden');
-        video.pause(); 
+        previewOverlay.style.display = 'block';
+        video.pause();
     }
 
     function retakeSnap() {
-        document.getElementById('snapPreviewOverlay').classList.add('hidden');
+        document.getElementById('snapPreviewOverlay').style.display = 'none';
         document.getElementById('video').play();
     }
 
     function confirmSnap() {
         const dataUrl = document.getElementById('snapPreviewImg').src;
-        document.getElementById('snapPreviewOverlay').classList.add('hidden');
+        document.getElementById('snapPreviewOverlay').style.display = 'none';
         document.getElementById('video').play();
 
         if (currentStep === 1) {
@@ -538,28 +551,23 @@
         const partial     = extractedInfo.NumDoc || extractedInfo.Nombre;
         const ocrBox      = document.getElementById('ocrConfirmation');
         const container   = document.getElementById('ocrFields');
+        const statusHeader = document.getElementById('ocrStatusHeader');
         container.innerHTML = '';
 
-        // ── Cabecera: éxito, parcial o fallo ──────────────────────────────────
-        const header = ocrBox.querySelector('div.bg-green-50, div.bg-yellow-50, div.bg-red-50');
-        if (header) header.remove(); // limpiar cabecera anterior
-
-        let headerHTML = '';
+        // ── Cabecera: éxito, parcial o fallo (escrita en div dedicado) ─────────
         if (criticalOk) {
-            headerHTML = `<div class="bg-green-50 border-2 border-green-200 p-4 rounded-xl mb-4">
+            statusHeader.innerHTML = `<div class="bg-green-50 border-2 border-green-200 p-4 rounded-xl mb-4">
                 <h4 class="text-green-800 font-bold flex items-center mb-1"><span class="mr-2 text-xl">✅</span> Datos leídos correctamente</h4>
                 <p class="text-sm text-green-700">Verifique la información y corrija lo que no sea correcto.</p></div>`;
         } else if (partial) {
-            headerHTML = `<div class="bg-yellow-50 border-2 border-yellow-300 p-4 rounded-xl mb-4">
+            statusHeader.innerHTML = `<div class="bg-yellow-50 border-2 border-yellow-300 p-4 rounded-xl mb-4">
                 <h4 class="text-yellow-800 font-bold flex items-center mb-1"><span class="mr-2 text-xl">⚠️</span> Lectura parcial</h4>
                 <p class="text-sm text-yellow-700">No hemos podido leer todos los datos con claridad. Por favor, <strong>revisa y completa los campos</strong> a continuación o repite la foto.</p></div>`;
         } else {
-            headerHTML = `<div class="bg-red-50 border-2 border-red-300 p-4 rounded-xl mb-4">
+            statusHeader.innerHTML = `<div class="bg-red-50 border-2 border-red-300 p-4 rounded-xl mb-4">
                 <h4 class="text-red-800 font-bold flex items-center mb-1"><span class="mr-2 text-xl">❌</span> No pudimos leer el documento</h4>
                 <p class="text-sm text-red-700">No hemos podido leer todos los datos con claridad. Por favor, <strong>revisa y completa los campos abajo</strong> o repite la foto con mejor iluminación.</p></div>`;
         }
-        ocrBox.querySelector('.bg-green-50, .bg-yellow-50, .bg-red-50, div:first-child')?.remove();
-        ocrBox.insertAdjacentHTML('afterbegin', headerHTML);
 
         // ── Campos editables ───────────────────────────────────────────────────
         const fieldDefs = [
@@ -649,7 +657,8 @@
     function cancelScanner() {
         if (currentStream) currentStream.getTracks().forEach(track => track.stop());
         document.getElementById('scannerInterface').classList.add('hidden');
-        document.getElementById('snapPreviewOverlay').classList.add('hidden');
+        document.getElementById('snapPreviewOverlay').style.display = 'none';
+        document.getElementById('scanningLoader').classList.add('hidden');
         document.getElementById('docTypeSelection').classList.remove('hidden');
     }
 
