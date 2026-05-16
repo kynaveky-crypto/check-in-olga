@@ -6,8 +6,6 @@
   <title>L'apartament d'Olga - Check-In</title>
   <link rel="stylesheet" href="estilos.css">
   <script src="https://cdn.tailwindcss.com"></script>
-  <!-- Librería para OCR (Reconocimiento de texto) -->
-  <script src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js'></script>
 </head>
 <body class="bg-gray-100 min-h-screen p-4 flex flex-col items-center justify-center">
   
@@ -512,156 +510,35 @@
         if (currentStream) currentStream.getTracks().forEach(track => track.stop());
         document.getElementById('scannerInterface').classList.add('hidden');
         document.getElementById('scanningLoader').classList.remove('hidden');
-        try {
-            let fullText = '';
-            // Pasada 1: imagen frontal completa (General)
-            const processedFront = await preprocessImageForOCR(capturedData.front, false);
-            const r1 = await Tesseract.recognize(processedFront, 'spa+eng', { logger: m => {} });
-            fullText += r1.data.text + '\n';
-
-            // Pasada 2: Zona MRZ (Pista de caracteres restringida)
-            const processedMRZ = await preprocessImageForOCR(capturedData.front, true);
-            const r2 = await Tesseract.recognize(processedMRZ, 'eng', {
-                logger: m => {},
-                tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<'
-            });
-            fullText += r2.data.text + '\n';
-
-            // Pasada 3: Reverso (Domicilio)
-            if (capturedData.back) {
-                const processedBack = await preprocessImageForOCR(capturedData.back, false);
-                const r3 = await Tesseract.recognize(processedBack, 'spa+eng', { logger: m => {} });
-                fullText += r3.data.text + '\n';
-            }
-            console.log('=== OCR RAW TEXT ===\n', fullText);
-            processOCR(fullText);
-        } catch (err) {
-            console.error('OCR Error:', err);
-            extractedInfo = {};
-            showConfirmationUI(false);
-        } finally {
+        
+        // Simular un procesamiento rápido de imagen (0.5s) para dar feedback visual
+        setTimeout(() => {
             document.getElementById('scanningLoader').classList.add('hidden');
-        }
+            // Inicializar info vacía para llenado manual
+            extractedInfo = {
+                TipoDoc:      currentDocType,
+                NumDoc:       '',
+                Soporte:      '',
+                Nombre:       '',
+                Apellidos:    '',
+                Sexo:         '',
+                Nacimiento:   '',
+                Expedicion:   '',
+                Nacionalidad: '',
+                Direccion:    '',
+                Localidad:    '',
+                Pais:         'ESPAÑA'
+            };
+            showConfirmationUI(false); 
+        }, 600);
     }
 
-    function calculateMRZCheck(str) {
-        const chars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-        const weights = [7, 3, 1];
-        let sum = 0;
-        for (let i = 0; i < str.length; i++) {
-            const val = str[i] === '<' ? 0 : chars.indexOf(str[i]);
-            if (val === -1) continue;
-            sum += val * weights[i % 3];
-        }
-        return sum % 10;
-    }
+    // OCR Removido - Flujo manual activo
 
-    function normalizeMRZ(line) {
-        return line.replace(/\s/g, '').replace(/[^A-Z0-9<]/g, '')
-            .replace(/O/g, '0').replace(/o/g, '0')
-            .replace(/[I|l]/g, '1')
-            .toUpperCase();
-    }
-
+    // ─── FLUJO MANUAL ────────────────────────────────────────────────────────────
     function processOCR(text) {
-        // Normalizar texto: quitar guiones de corte de línea, compactar espacios
-        const cleanText = text.replace(/([A-Z])-\n([A-Z])/g, '$1$2').replace(/[ \t]+/g, ' ');
-        const lines = cleanText.split('\n').map(l => l.trim()).filter(l => l.length > 2);
-        const info = {
-            TipoDoc: currentDocType, NumDoc: '', Soporte: '', Nombre: '',
-            Apellidos: '', Sexo: '', Nacimiento: '', Expedicion: '',
-            Nacionalidad: '', Direccion: '', Localidad: '', Pais: 'ESPAÑA'
-        };
-
-        // ── 1. BUSCAR LÍNEAS MRZ (tolerar espacios y errores OCR) ─────────────
-        const mrzCandidates = lines
-            .map(l => normalizeMRZ(l))
-            .filter(l => l.length >= 20 && /^[A-Z0-9<]{20,}$/.test(l));
-        if (mrzCandidates.length >= 2) parseMRZ(mrzCandidates, info);
-
-        // ── 2. NÚMERO DE DOCUMENTO ────────────────────────────────────────────
-        if (!info.NumDoc) {
-            // DNI: 8 dígitos + letra, tolerando espacio o guión
-            const m = cleanText.match(/\b(\d{7,8}[\s\-]?[A-HJ-NP-TV-Z])\b/i);
-            if (m) info.NumDoc = m[1].replace(/[\s\-]/g, '').toUpperCase();
-        }
-        if (!info.NumDoc && currentDocType === 'Pasaporte') {
-            const m = cleanText.match(/\b([A-Z]{2,3}[\s]?\d{6,7})\b/i);
-            if (m) info.NumDoc = m[1].replace(/\s/g, '').toUpperCase();
-        }
-
-        // ── 3. NÚMERO DE SOPORTE (IDESP) ──────────────────────────────────────
-        if (!info.Soporte) {
-            const m1 = cleanText.match(/(?:IDESP|NUM\.?\s*SUP(?:ORT)?|SOPORTE)[:\s]*([A-Z0-9]{4,12})/i);
-            const m2 = cleanText.match(/\b([A-Z]{3}\d{6})\b/);
-            if (m1) info.Soporte = m1[1].toUpperCase();
-            else if (m2) info.Soporte = m2[1].toUpperCase();
-        }
-
-        // ── 4. SEXO ───────────────────────────────────────────────────────────
-        if (!info.Sexo) {
-            const mS = cleanText.match(/(?:SEXO|SEX)[:\s]*([HMF]|HOMBRE|MUJER|MALE|FEMALE|MASCULINO|FEMENINO)/i);
-            if (mS) {
-                const v = mS[1].toUpperCase();
-                info.Sexo = (v === 'H' || v === 'HOMBRE' || v === 'MALE' || v === 'MASCULINO') ? 'M' : 'F';
-            } else if (/\b(HOMBRE|MASCULINO|MALE)\b/i.test(cleanText)) info.Sexo = 'M';
-            else if (/\b(MUJER|FEMENINO|FEMALE)\b/i.test(cleanText)) info.Sexo = 'F';
-        }
-
-        // ── 5. FECHAS ─────────────────────────────────────────────────────────
-        const meses = { ENE:1,FEB:2,MAR:3,ABR:4,MAY:5,JUN:6,JUL:7,AGO:8,SEP:9,OCT:10,NOV:11,DIC:12,JAN:1,AUG:8 };
-        const foundDates = [];
-        // Formato "DD ENE YYYY" o "DD ENE YY"
-        const re1 = /(\d{1,2})[\s\-]+(ENE|FEB|MAR|ABR|MAY|JUN|JUL|AGO|SEP|OCT|NOV|DIC|JAN|AUG)[\s\-]+(\d{2,4})/gi;
-        let dm;
-        while ((dm = re1.exec(cleanText)) !== null) {
-            let yr = parseInt(dm[3]); if (yr < 100) yr += yr < 30 ? 2000 : 1900;
-            foundDates.push({ iso: `${yr}-${String(meses[dm[2].toUpperCase()]).padStart(2,'0')}-${dm[1].padStart(2,'0')}`, yr });
-        }
-        // Formato DD/MM/YYYY o DD-MM-YYYY
-        const re2 = /(\d{2})[\/.\-](\d{2})[\/.\-](\d{4})/g;
-        while ((dm = re2.exec(cleanText)) !== null) {
-            foundDates.push({ iso: `${dm[3]}-${dm[2]}-${dm[1]}`, yr: parseInt(dm[3]) });
-        }
-        foundDates.sort((a, b) => a.yr - b.yr);
-        if (foundDates.length >= 1 && !info.Nacimiento) info.Nacimiento = foundDates[0].iso;
-        if (foundDates.length >= 2 && !info.Expedicion) info.Expedicion = foundDates[foundDates.length - 1].iso;
-
-        // ── 6. NACIONALIDAD ───────────────────────────────────────────────────
-        if (!info.Nacionalidad) {
-            const mN = cleanText.match(/NACIONAL(?:IDAD)?[:\s]+([A-ZÁÉÍÓÚÑ]{3,20})/i);
-            if (mN) info.Nacionalidad = mN[1].toUpperCase();
-            else if (/\bESPAÑOL[AO]?\b|\bSPANISH\b/i.test(cleanText)) info.Nacionalidad = 'ESPAÑOLA';
-            else if (/\bESP\b/.test(cleanText)) info.Nacionalidad = 'ESPAÑOLA';
-        }
-
-        // ── 7. NOMBRE Y APELLIDOS ─────────────────────────────────────────────
-        if (!info.Nombre) {
-            const skipWords = /ESPAÑA|ESPAGNE|REINO|UNION|EUROPEA|DOCUMENTO|NATIONAL|IDENTIDAD|VALIDA|IDESP|SEXO|SOPORTE|NACIMIENTO|EXPEDICION|FIRMA/i;
-            for (const line of lines) {
-                if (/^[A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ ]{6,48}$/.test(line) && !skipWords.test(line)) {
-                    const parts = line.trim().split(/\s+/);
-                    if (parts.length >= 2 && parts.length <= 5) {
-                        info.Nombre = parts[parts.length - 1];
-                        info.Apellidos = parts.slice(0, -1).join(' ');
-                        break;
-                    }
-                }
-            }
-        }
-
-        // ── 8. DIRECCIÓN Y LOCALIDAD ──────────────────────────────────────────
-        if (!info.Direccion) {
-            const mD = cleanText.match(/(?:DOMICILIO|DIRECCI[OÓ]N|C[\/.\s]|CL[\s.]|AV(?:DA)?[\s.]|CALLE|CARRER)[:\s]*(.{5,70}?)(?=\n|$)/i);
-            if (mD) info.Direccion = mD[1].trim();
-        }
-        if (!info.Localidad) {
-            const mL = cleanText.match(/(?:MUNICIPIO|LOCALIDAD|LOCALITAT|POBLACI[OÓ]N|CIUDAD)[:\s]*([A-ZÁÉÍÓÚÑ ]{3,40})/i);
-            if (mL) info.Localidad = mL[1].trim();
-        }
-
-        extractedInfo = info;
-        showConfirmationUI(true);
+        // Esta función ya no se usa, el flujo es manual para asegurar precisión del 100%.
+        showConfirmationUI();
     }
 
     // ─── PARSER MRZ MEJORADO (CON CHECKSUMS) ────────────────────────────────────
@@ -730,28 +607,15 @@
     }
 
     // ─── UI DE CONFIRMACIÓN MEJORADA ─────────────────────────────────────────────
-    function showConfirmationUI(ocrRan = true) {
-        const criticalOk = extractedInfo.NumDoc && extractedInfo.Nombre && extractedInfo.Nacimiento;
-        const partial     = extractedInfo.NumDoc || extractedInfo.Nombre;
+    function showConfirmationUI() {
         const ocrBox      = document.getElementById('ocrConfirmation');
         const container   = document.getElementById('ocrFields');
         const statusHeader = document.getElementById('ocrStatusHeader');
         container.innerHTML = '';
 
-        // ── Cabecera: éxito, parcial o fallo (escrita en div dedicado) ─────────
-        if (criticalOk) {
-            statusHeader.innerHTML = `<div class="bg-green-50 border-2 border-green-200 p-4 rounded-xl mb-4">
-                <h4 class="text-green-800 font-bold flex items-center mb-1"><span class="mr-2 text-xl">✅</span> Datos leídos correctamente</h4>
-                <p class="text-sm text-green-700">Verifique la información y corrija lo que no sea correcto.</p></div>`;
-        } else if (partial) {
-            statusHeader.innerHTML = `<div class="bg-yellow-50 border-2 border-yellow-300 p-4 rounded-xl mb-4">
-                <h4 class="text-yellow-800 font-bold flex items-center mb-1"><span class="mr-2 text-xl">⚠️</span> Lectura parcial</h4>
-                <p class="text-sm text-yellow-700">No hemos podido leer todos los datos con claridad. Por favor, <strong>revisa y completa los campos</strong> a continuación o repite la foto.</p></div>`;
-        } else {
-            statusHeader.innerHTML = `<div class="bg-red-50 border-2 border-red-300 p-4 rounded-xl mb-4">
-                <h4 class="text-red-800 font-bold flex items-center mb-1"><span class="mr-2 text-xl">❌</span> No pudimos leer el documento</h4>
-                <p class="text-sm text-red-700">No hemos podido leer todos los datos con claridad. Por favor, <strong>revisa y completa los campos abajo</strong> o repite la foto con mejor iluminación.</p></div>`;
-        }
+        statusHeader.innerHTML = `<div class="bg-blue-50 border-2 border-blue-200 p-4 rounded-xl mb-4">
+            <h4 class="text-blue-800 font-bold flex items-center mb-1"><span class="mr-2 text-xl">📸</span> Captura realizada</h4>
+            <p class="text-sm text-blue-700">Utilice las fotos de arriba como referencia para completar los datos del viajero.</p></div>`;
 
         // ── Campos editables ───────────────────────────────────────────────────
         const fieldDefs = [
