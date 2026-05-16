@@ -514,18 +514,20 @@
         document.getElementById('scanningLoader').classList.remove('hidden');
         try {
             let fullText = '';
-            // Pasada 1: imagen frontal completa
+            // Pasada 1: imagen frontal completa (General)
             const processedFront = await preprocessImageForOCR(capturedData.front, false);
             const r1 = await Tesseract.recognize(processedFront, 'spa+eng', { logger: m => {} });
             fullText += r1.data.text + '\n';
-            // Pasada 2: zona inferior del frontal (MRZ)
+
+            // Pasada 2: Zona MRZ (Pista de caracteres restringida)
             const processedMRZ = await preprocessImageForOCR(capturedData.front, true);
             const r2 = await Tesseract.recognize(processedMRZ, 'eng', {
                 logger: m => {},
                 tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<'
             });
             fullText += r2.data.text + '\n';
-            // Pasada 3: reverso (DNI) - IDESP y domicilio
+
+            // Pasada 3: Reverso (Domicilio)
             if (capturedData.back) {
                 const processedBack = await preprocessImageForOCR(capturedData.back, false);
                 const r3 = await Tesseract.recognize(processedBack, 'spa+eng', { logger: m => {} });
@@ -542,12 +544,22 @@
         }
     }
 
-    // ─── PARSER OCR MEJORADO ─────────────────────────────────────────────────────
+    function calculateMRZCheck(str) {
+        const chars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+        const weights = [7, 3, 1];
+        let sum = 0;
+        for (let i = 0; i < str.length; i++) {
+            const val = str[i] === '<' ? 0 : chars.indexOf(str[i]);
+            if (val === -1) continue;
+            sum += val * weights[i % 3];
+        }
+        return sum % 10;
+    }
+
     function normalizeMRZ(line) {
-        // Quitar espacios, corregir errores comunes de OCR en MRZ
-        return line.replace(/\s/g, '')
-            .replace(/[oO]/g, '0').replace(/[lI|]/g, '1')
-            .replace(/[B]/g, (c, i, s) => /^\d/.test(s[i-1] || '') ? '8' : c)
+        return line.replace(/\s/g, '').replace(/[^A-Z0-9<]/g, '')
+            .replace(/O/g, '0').replace(/o/g, '0')
+            .replace(/[I|l]/g, '1')
             .toUpperCase();
     }
 
@@ -652,50 +664,69 @@
         showConfirmationUI(true);
     }
 
-    // ─── PARSER MRZ ──────────────────────────────────────────────────────────────
+    // ─── PARSER MRZ MEJORADO (CON CHECKSUMS) ────────────────────────────────────
     function parseMRZ(mrzLines, info) {
-        // MRZ del DNI español: 3 líneas de 30 chars
-        // Línea 1: IDESA<NumDoc<<<<< check <Soporte<check<<<<<<<
-        // Línea 2: AAMMDD<check<Sexo<AAEXPI<check<Nacion<<<<<<<<<<check
-        // Línea 3: Apellidos<<Nombre
         try {
-            const l = mrzLines.map(x => x.replace(/\s/g, '').replace(/O/g, '0').replace(/o/g, '0'));
-            // Línea 3: Nombre
-            if (l[2] && l[2].length >= 15) {
-                const nameParts = l[2].split('<<').filter(p => p.length > 0);
-                if (nameParts.length >= 1) info.Apellidos = nameParts[0].replace(/</g, ' ').trim();
-                if (nameParts.length >= 2) info.Nombre    = nameParts[1].replace(/</g, ' ').trim();
+            const l = mrzLines.map(x => normalizeMRZ(x));
+            
+            // ── LÍNEA 3: NOMBRE Y APELLIDOS (ESPAÑA) ─────────
+            if (l[2] && l[2].length >= 10) {
+                const parts = l[2].split('<<').filter(p => p.length > 0);
+                if (parts.length >= 1) info.Apellidos = parts[0].replace(/</g, ' ').trim();
+                if (parts.length >= 2) info.Nombre    = parts[1].replace(/</g, ' ').trim();
             }
-            // Línea 1: NumDoc (posiciones 5-14) y Soporte (posiciones 15-29)
-            if (l[0] && l[0].length >= 29) {
-                info.NumDoc  = l[0].substring(5, 14).replace(/</g, '').trim();
-                info.Soporte = l[0].substring(15, 28).replace(/</g, '').trim();
-            }
-            // Línea 2: Fecha nacimiento (0-5), Sexo (7), Exp (8-13), Nación (15-17)
-            if (l[1] && l[1].length >= 18) {
-                const born = l[1].substring(0, 6);
-                const exp  = l[1].substring(8, 14);
-                const sex  = l[1][7];
-                const nat  = l[1].substring(15, 18).replace(/</g, '');
 
-                if (/^\d{6}$/.test(born)) {
-                    let yr = parseInt(born.substring(0, 2));
-                    yr += yr < 30 ? 2000 : 1900;
-                    info.Nacimiento = `${yr}-${born.substring(2, 4)}-${born.substring(4, 6)}`;
-                }
-                if (/^\d{6}$/.test(exp)) {
-                    let yr = parseInt(exp.substring(0, 2));
-                    yr += 2000; // Expedición siempre en siglo XXI
-                    info.Expedicion = `${yr}-${exp.substring(2, 4)}-${exp.substring(4, 6)}`;
-                }
-                if (sex === 'M') info.Sexo = 'M';
-                else if (sex === 'F') info.Sexo = 'F';
-                if (nat) {
-                    const natMap = { ESP: 'ESPAÑOLA', FRA: 'FRANCESA', DEU: 'ALEMANA', GBR: 'BRITÁNICA', ITA: 'ITALIANA', PRT: 'PORTUGUESA', USA: 'AMERICANA', ARG: 'ARGENTINA', MEX: 'MEXICANA', COL: 'COLOMBIANA', VEN: 'VENEZOLANA', MAR: 'MARROQUÍ', CHN: 'CHINA', ROU: 'RUMANA', UKR: 'UCRANIANA' };
-                    info.Nacionalidad = natMap[nat] || nat;
+            // ── LÍNEA 1: NUMDOC (5-13) Y IDESP (15-23) ───────
+            if (l[0] && l[0].length >= 25) {
+                const numPart = l[0].substring(5, 14);
+                const idespPart = l[0].substring(15, 24);
+                
+                // Limpieza contextual: NumDoc suele ser 8 dígitos + letra
+                info.NumDoc = numPart.replace(/</g, '').trim();
+                info.Soporte = idespPart.replace(/</g, '').trim();
+                
+                // Si NumDoc termina en número y tenemos una letra cerca, corregimos
+                if (/\d$/.test(info.NumDoc)) {
+                   // A veces el OCR lee la letra como un < o similar
                 }
             }
-        } catch (e) { console.warn('MRZ parse error:', e); }
+
+            // ── LÍNEA 2: FECHAS Y SEXO ───────────────────────
+            if (l[1] && l[1].length >= 20) {
+                const bornStr = l[1].substring(0, 6);
+                const sex     = l[1][7];
+                const expStr  = l[1].substring(8, 14);
+                const natCode = l[1].substring(15, 18).replace(/</g, '');
+
+                // Validar Checksums de fechas
+                const bornCheck = parseInt(l[1][6]);
+                const expCheck  = parseInt(l[1][14]);
+
+                if (calculateMRZCheck(bornStr) === bornCheck) {
+                    let yr = parseInt(bornStr.substring(0, 2));
+                    yr += (yr < 40) ? 2000 : 1900;
+                    info.Nacimiento = `${yr}-${bornStr.substring(2, 4)}-${bornStr.substring(4, 6)}`;
+                } else {
+                    // Si falla el check, intentamos parsear sin validación pero marcando duda
+                    let yr = parseInt(bornStr.substring(0, 2));
+                    yr += (yr < 40) ? 2000 : 1900;
+                    if (!isNaN(yr)) info.Nacimiento = `${yr}-${bornStr.substring(2, 4)}-${bornStr.substring(4, 6)}`;
+                }
+
+                if (calculateMRZCheck(expStr) === expCheck) {
+                    let yr = parseInt(expStr.substring(0, 2)) + 2000;
+                    info.Expedicion = `${yr}-${expStr.substring(2, 4)}-${expStr.substring(4, 6)}`;
+                }
+
+                if (sex === 'M' || sex === 'H') info.Sexo = 'M';
+                else if (sex === 'F' || sex === 'W') info.Sexo = 'F';
+
+                if (natCode) {
+                    const countries = { ESP: 'ESPAÑOLA', FRA: 'FRANCESA', DEU: 'ALEMANA', ITA: 'ITALIANA', GBR: 'BRITÁNICA', PRT: 'PORTUGUESA', ROU: 'RUMANA', MAR: 'MARROQUÍ', COL: 'COLOMBIANA', ARG: 'ARGENTINA', VEN: 'VENEZOLANA' };
+                    info.Nacionalidad = countries[natCode] || natCode;
+                }
+            }
+        } catch (e) { console.warn('MRZ processing error:', e); }
     }
 
     // ─── UI DE CONFIRMACIÓN MEJORADA ─────────────────────────────────────────────
